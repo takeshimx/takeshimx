@@ -7,32 +7,43 @@ Google Japanでの12年間のプログラムマネジメント経験と、Gemini
 ---
 
 ## 🚀 Featured Projects (Sabbatical 2025)
-過去8ヶ月（850時間+）で開発した、Serverless & AIネイティブなアプリケーション群です。
+2025年5月~12月(900時間+)で開発した、Serverless & AIネイティブなアプリケーション群です。
 **"User Sovereignty (データ主権)"** と **"Serverless FinOps"** を設計思想の核としています。
 
 ### 1. ⚾ [Diamond Lens] - MLB Analytics AI Agent
-**Natural Language to SQL Engine for Non-Technical Users**
+**Natural Language Interface (NLI) to SQL Engine for Business Intelligence**
 [Loom Demo Video Link Here] | [Repository Link]
 
-* **Problem:** 専門知識がないとSQLが書けず、データ活用が進まない。
-* **Solution:** 自然言語を「実行可能なSQL」に変換し、BigQueryからインサイトを即座に抽出するAIエージェント。
-* **Tech:** Gemini 2.5 Flash, BigQuery, FastAPI, React, Cloud Run
+* **Problem:** 専門知識なしではSQLを書けず、膨大なライブデータからの即時インサイト抽出が困難。
+* **Solution:** 自然言語による意図解釈から「動的SQL」を生成し、BigQueryから直接集計結果を抽出するNLI-to-SQLエンジン。
+* **Technical Highlights:**
+    * **Gemini 2.5 Flash** による複雑なクエリ意図の正規化（選手名の名寄せ、統計メトリクスの抽出）。
+    * **Parameterized Queries** による動的SQL生成と、インジェクション耐性を確保した堅牢なデータパイプライン。
+    * **Statcast連携:** Exit Velocityなどの高度な統計予測モデル（Linear Regression）を統合。
+* **Tech:** Gemini, BigQuery, FastAPI, React, Cloud Run, Terraform
 
 ### 2. 💰 [Sovereign Finance] - Personal AI CFO
-**Serverless FinOps Architecture & Autonomous Auditing**
+**Serverless FinOps Architecture & Hybrid RAG Categorization**
 [Loom Demo Video Link Here] | [Repository Link]
 
-* **Problem:** 既存の家計簿アプリはカスタマイズ性が低く、データプライバシーの懸念がある。
-* **Solution:** BigQueryをバックエンドに採用し、ランニングコストを月額数円に抑えつつ、Vertex AI (Embeddings) で支出の「意味検索・分類」を行う自律型AI CFO。
-* **Tech:** Next.js, Vertex AI (Vector Search), Firestore, Gmail API
+* **Problem:** 既存アプリの柔軟性不足と、データプライバシー（User Sovereignty）の欠如。
+* **Solution:** BigQueryを中心とした「究極的にランニングコスト（月額数円）を抑えた」データ主権重視のAI CFO。
+* **Technical Highlights:**
+    * **Hybrid RAG:** Vertex AI Embeddings + Firestore Vector Search によるセマンティック検索と、BigQueryの履歴データを組み合わせた高精度な自動収支分類。
+    * **Feedback Loop:** ユーザーによる修正結果を履歴にフィードバックし、Embedding精度の継続的改善を実現。
+    * **FinOps:** コンピューティングコストをゼロに抑えるサーバーレス設計。
+* **Tech:** Next.js, Vertex AI (Vector Search), Firestore, BigQuery, Gmail API
 
-### 3. ✈️ [Travel Agent] - Unstructured Data Workflow
-**Automated Booking Management & Trust Scoring**
+### 3. 🌴 [Travel Agent] - Autonomous Unstructured Data Workflow
+**Automated Booking Management & Multi-Source Trust Scoring**
 [Loom Demo Video Link Here] | [Repository Link]
 
-* **Problem:** 非構造化データ（メール、Web）の処理と、情報の信頼性検証のコスト。
-* **Solution:** Gmailからの予約情報自動抽出と、統計モデルによる「フェイクレビュー検出」機能を備えたAIトラベルエージェント。
-* **Tech:** Agentic AI Workflow, Statistical Analysis, Firecrawl
+* **Problem:** 予約メールやWebレビューなどの「非構造化データ」の処理コストと、情報の不確実性。
+* **Solution:** Gmailからの予約情報自動抽出と、情報の信憑性を検証する「フェイクレビュー検知」ロジックを備えたAIトラベルエージェント。
+* **Technical Highlights:**
+    * **Autonomous Agent:** LangChain等の重いフレームワークに依存せず、Firecrawl + Gemini を直接統合した軽量かつ高性能な自律型エージェント。
+    * **Multi-Source Logic:** Google MapsとBooking.com等の相反する評価データを統計的に分析し、独自の信頼スコア（Trust Score）を算出。
+* **Tech:** Agentic AI Workflow, Firecrawl, Gemini, FastAPI, BigQuery
 
 ---
 
