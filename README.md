@@ -20,19 +20,19 @@ Googleでの12年間にわたる大規模データオペレーション統括（
 A collection of serverless, AI-native applications developed over **900+ hours** during a 2025 sabbatical, centering on **"User Sovereignty (Data Ownership)"** and **"Serverless FinOps"** architectures.
 
 ### 1. ⚾ [Diamond Lens] - MLB Analytics AI Agent
-**NLI-to-SQL Engine for Real-Time Insights** | [Loom Demo](Loom_Demo_Video_Link_Here) | [GitHub Repository](https://github.com/takeshimx/diamond-lens)
+**NLI-to-SQL Engine for Real-Time Insights** | Loom Demo: TBA | [GitHub Repository](https://github.com/takeshimx/diamond-lens)
 
 * **English Summary:** Translates natural language queries into optimized BigQuery SQL, democratizing data access for users without SQL expertise. Features Gemini 2.5 Flash for intent normalization and a robust, parameterized data pipeline.
 * **日本語ダイジェスト:** 専門知識なしではSQLを書けず、膨大なライブデータからの即時インサイト抽出が困難という課題に対し、Gemini 2.5 Flashによる意図解釈から「動的SQL」を生成し、BigQueryから直接集計結果を抽出するエンジンを実装。インジェクション耐性を確保した堅牢な設計と、Linear Regressionによる予測モデルを統合。
 
 ### 2. 💰 [Sovereign Finance] - Personal AI CFO
-**Serverless FinOps & Hybrid RAG Categorization** | [Loom Demo](Loom_Demo_Video_Link_Here) | [GitHub Repository](https://github.com/takeshimx/personal-finance-architecture)
+**Serverless FinOps & Hybrid RAG Categorization** | Loom Demo: TBA | [GitHub Repository](https://github.com/takeshimx/personal-finance-architecture)
 
 * **English Summary:** A cost-optimized personal finance platform (running on <$1/mo) utilizing Hybrid RAG (Vertex AI + Firestore Vector Search) for automated transaction categorization and BigQuery for scalable analytics.
 * **日本語ダイジェスト:** 既存アプリの柔軟性不足とプライバシー懸念に対し、BigQueryを採用した「月額数円」の低コスト設計と、Vertex AI Embeddings + Firestore Vector Searchによる高精度なハイブリッドRAG収支分類を実装。ユーザー修正を学習するフィードバックループを構築。
 
 ### 3. 🌴 [Travel Agent] - Autonomous Unstructured Data Workflow
-**Automated Booking & Multi-Source Trust Scoring** | [Loom Demo](Loom_Demo_Video_Link_Here) | [GitHub Repository](https://github.com/takeshimx/travel-planner-docs)
+**Automated Booking & Multi-Source Trust Scoring** | Loom Demo: TBA | [GitHub Repository](https://github.com/takeshimx/travel-planner-docs)
 
 * **English Summary:** An autonomous agent that extracts bookings from Gmail and analyzes hotel reviews using a custom "Trust Score" logic (statistical analysis of conflicting data sources like Google Maps vs. Booking.com).
 * **日本語ダイジェスト:** 非構造化データ（メール・Web）の処理コスト課題に対し、LangChain等の外部フレームワークに依存せず、Firecrawl + Gemini を直接統合した自律型エージェントを構築。多ソースの評価データを統計的に分析し、独自の信頼スコア（Trust Score）を算出するロジックを実装。
