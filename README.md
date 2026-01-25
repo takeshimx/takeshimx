@@ -1,49 +1,41 @@
 # Hi there, I'm Takeshi 👋
-### Ex-Google PgM (12y) turned Full-Stack AI Engineer
+### Ex-Google PgM turned AI Solutions Architect / FDE
 
-ビジネス課題を「スケーラブルなアーキテクチャ」と「実装」で解決する Forward Deployed Engineer / Solutions Architect。
-Google Japanでの12年間のプログラムマネジメント経験と、Gemini/BigQueryを駆使したフルスタック開発スキルを武器に、企業のDXとAI実装を推進します。
+**Forward Deployed Engineer bridging the gap between Business and Engineering through implementation.**
+
+Fusing 12 years of Large-Scale Data Operations leadership at Google with "Generative AI × Serverless" implementation skills honed during a 2025 sabbatical.
+I lead the end-to-end lifecycle—from "Translating Business Requirements" to "Scalable Architecture Design" and "Rapid Prototyping"—to drive DX and practical AI integration.
+
+---
+
+**ビジネスとエンジニアリングの「ギャップ」を埋める、実装型 Forward Deployed Engineer。**
+
+Googleでの12年間にわたる大規模データオペレーション統括（Data Ops）の経験と、サバティカル期間（2025）に集中的に磨き上げた「Generative AI × Serverless」の実装スキルを融合。
+「ビジネス要件の翻訳」から「スケーラブルなアーキテクチャ設計」、そして「プロトタイピング」までを一気通貫でリードし、企業のDXと実用的なAI導入を推進します。
 
 ---
 
 ## 🚀 Featured Projects (Sabbatical 2025)
-2025年5月~12月(900時間+)で開発した、Serverless & AIネイティブなアプリケーション群です。
-**"User Sovereignty (データ主権)"** と **"Serverless FinOps"** を設計思想の核としています。
+
+A collection of serverless, AI-native applications developed over **900+ hours** during a 2025 sabbatical, centering on **"User Sovereignty (Data Ownership)"** and **"Serverless FinOps"** architectures.
 
 ### 1. ⚾ [Diamond Lens] - MLB Analytics AI Agent
-**Natural Language Interface (NLI) to SQL Engine for Business Intelligence**
-[Loom Demo Video Link Here] | [Repository Link]
+**NLI-to-SQL Engine for Real-Time Insights** | [Loom Demo Video Link Here] | [Repository Link]
 
-* **Problem:** 専門知識なしではSQLを書けず、膨大なライブデータからの即時インサイト抽出が困難。
-* **Solution:** 自然言語による意図解釈から「動的SQL」を生成し、BigQueryから直接集計結果を抽出するNLI-to-SQLエンジン。
-* **Technical Highlights:**
-    * **Gemini 2.5 Flash** による複雑なクエリ意図の正規化（選手名の名寄せ、統計メトリクスの抽出）。
-    * **Parameterized Queries** による動的SQL生成と、インジェクション耐性を確保した堅牢なデータパイプライン。
-    * **Statcast連携:** Exit Velocityなどの高度な統計予測モデル（Linear Regression）を統合。
-* **Tech:** Gemini, BigQuery, FastAPI, React, Cloud Run, Terraform
+* **English Summary:** Translates natural language queries into optimized BigQuery SQL, democratizing data access for users without SQL expertise. Features Gemini 2.5 Flash for intent normalization and a robust, parameterized data pipeline.
+* **日本語ダイジェスト:** 専門知識なしではSQLを書けず、膨大なライブデータからの即時インサイト抽出が困難という課題に対し、Gemini 2.5 Flashによる意図解釈から「動的SQL」を生成し、BigQueryから直接集計結果を抽出するエンジンを実装。インジェクション耐性を確保した堅牢な設計と、Linear Regressionによる予測モデルを統合。
 
 ### 2. 💰 [Sovereign Finance] - Personal AI CFO
-**Serverless FinOps Architecture & Hybrid RAG Categorization**
-[Loom Demo Video Link Here] | [Repository Link]
+**Serverless FinOps & Hybrid RAG Categorization** | [Loom Demo Video Link Here] | [Repository Link]
 
-* **Problem:** 既存アプリの柔軟性不足と、データプライバシー（User Sovereignty）の欠如。
-* **Solution:** BigQueryを中心とした「究極的にランニングコスト（月額数円）を抑えた」データ主権重視のAI CFO。
-* **Technical Highlights:**
-    * **Hybrid RAG:** Vertex AI Embeddings + Firestore Vector Search によるセマンティック検索と、BigQueryの履歴データを組み合わせた高精度な自動収支分類。
-    * **Feedback Loop:** ユーザーによる修正結果を履歴にフィードバックし、Embedding精度の継続的改善を実現。
-    * **FinOps:** コンピューティングコストをゼロに抑えるサーバーレス設計。
-* **Tech:** Next.js, Vertex AI (Vector Search), Firestore, BigQuery, Gmail API
+* **English Summary:** A cost-optimized personal finance platform (running on <$1/mo) utilizing Hybrid RAG (Vertex AI + Firestore Vector Search) for automated transaction categorization and BigQuery for scalable analytics.
+* **日本語ダイジェスト:** 既存アプリの柔軟性不足とプライバシー懸念に対し、BigQueryを採用した「月額数円」の低コスト設計と、Vertex AI Embeddings + Firestore Vector Searchによる高精度なハイブリッドRAG収支分類を実装。ユーザー修正を学習するフィードバックループを構築。
 
 ### 3. 🌴 [Travel Agent] - Autonomous Unstructured Data Workflow
-**Automated Booking Management & Multi-Source Trust Scoring**
-[Loom Demo Video Link Here] | [Repository Link]
+**Automated Booking & Multi-Source Trust Scoring** | [Loom Demo Video Link Here] | [Repository Link]
 
-* **Problem:** 予約メールやWebレビューなどの「非構造化データ」の処理コストと、情報の不確実性。
-* **Solution:** Gmailからの予約情報自動抽出と、情報の信憑性を検証する「フェイクレビュー検知」ロジックを備えたAIトラベルエージェント。
-* **Technical Highlights:**
-    * **Autonomous Agent:** LangChain等の重いフレームワークに依存せず、Firecrawl + Gemini を直接統合した軽量かつ高性能な自律型エージェント。
-    * **Multi-Source Logic:** Google MapsとBooking.com等の相反する評価データを統計的に分析し、独自の信頼スコア（Trust Score）を算出。
-* **Tech:** Agentic AI Workflow, Firecrawl, Gemini, FastAPI, BigQuery
+* **English Summary:** An autonomous agent that extracts bookings from Gmail and analyzes hotel reviews using a custom "Trust Score" logic (statistical analysis of conflicting data sources like Google Maps vs. Booking.com).
+* **日本語ダイジェスト:** 非構造化データ（メール・Web）の処理コスト課題に対し、LangChain等の外部フレームワークに依存せず、Firecrawl + Gemini を直接統合した自律型エージェントを構築。多ソースの評価データを統計的に分析し、独自の信頼スコア（Trust Score）を算出するロジックを実装。
 
 ---
 
@@ -60,8 +52,11 @@ Google Japanでの12年間のプログラムマネジメント経験と、Gemini
 ---
 
 ## 💼 Professional Background
-* **Google Japan (201x - 2025):** Program Manager (12 years)
-    * Led cross-functional projects... (ここに簡単な実績を英語で1-2行)
-* **Focus:** Bridging the gap between Business Requirements and Technical Implementation.
+* **Google (2013 - 2025):** Program Manager (Data Ops & Search Quality)
+    * **Large-Scale Deployment:** Led the successful launch of Indoor Maps for **1,200+ major venues** (airports, transit hubs) across JAPAC, managing end-to-end data collection logistics and ensuring strict quality standards.
+    * **Strategic Partnership Ops:** Directed Partnership Operations for Google Maps projects, managing **40+ external partners** across Japan and Australia to drive large-scale data acquisition deliverables.
+    * **Data Operations Leadership:** Led high-volume data collection teams of **200+ operators**, ensuring strict quality standards for Search and Geo products across the JAPAC region.
+    * **AI/ML Model Improvement:** Managed manual moderation operations processing **2M+ user-generated content items monthly**, directly contributing to ground truth data management and model accuracy.
+* **Focus:** Bridging the gap between Business Requirements and Technical Implementation (Data Ops to AI Solutions).
 
 [Contact Me / LinkedIn Link]
