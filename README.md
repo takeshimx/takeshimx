@@ -20,10 +20,10 @@ Googleでの12年間にわたる大規模データオペレーション統括（
 A collection of serverless, AI-native applications developed over **800+ hours** during a 2025 sabbatical, centering on **"User Sovereignty (Data Ownership)"** and **"Serverless FinOps"** architectures.
 
 ### 1. ⚾ [Diamond Lens] - MLB Analytics AI Agent
-**NLI-to-SQL Engine for Real-Time Insights** | Loom Demo: TBA | [GitHub Repository](https://github.com/takeshimx/diamond-lens)
+**Autonomous Analyst Agent (LangGraph) & NLI-to-SQL** | Loom Demo: TBA | [GitHub Repository](https://github.com/takeshimx/diamond-lens)
 
-* **English Summary:** Translates natural language queries into optimized BigQuery SQL, democratizing data access for users without SQL expertise. Features Gemini 2.5 Flash for intent normalization and a robust, parameterized data pipeline.
-* **日本語ダイジェスト:** 専門知識なしではSQLを書けず、膨大なライブデータからの即時インサイト抽出が困難という課題に対し、Gemini 2.5 Flashによる意図解釈から「動的SQL」を生成し、BigQueryから直接集計結果を抽出するエンジンを実装。インジェクション耐性を確保した堅牢な設計と、Linear Regressionによる予測モデルを統合。
+* **English Summary:** An advanced analytics agent evolved from an NLI-to-SQL engine into a full **Autonomous Analyst (LangGraph)**. It features a "Think-Act-Analyze" reasoning loop for multi-step statistical exploration, adaptive UI generation (Charts/Tables/Reports), and robust BigQuery integration for real-time sports insights.
+* **日本語ダイジェスト:** 従来のNLI-to-SQL（自然言語からSQL生成）基盤を、**LangGraphによる自律型アナリストエージェント**へと進化。単発のクエリ実行に留まらず、「思考・実行・分析」の推論ループを回すことで、多角的な統計データの探索から専門的なレポート生成、適応型UIによる可視化までを自律的に完結します。
 
 ### 2. 💰 [Sovereign Finance] - Personal Finance AI Agent
 **Serverless FinOps, SQL Agent & Slack AI Workflow** | Loom Demo: TBA | [GitHub Repository](https://github.com/takeshimx/personal-finance-architecture)
@@ -41,13 +41,16 @@ A collection of serverless, AI-native applications developed over **800+ hours**
 
 ## 🛠 Technology Stack
 **Cloud & Infrastructure:**
-![Google Cloud](https://img.shields.io/badge/GoogleCloud-%234285F4.svg?style=for-the-badge&logo=google-cloud&logoColor=white) ![Terraform](https://img.shields.io/badge/terraform-%235835CC.svg?style=for-the-badge&logo=terraform&logoColor=white) ![Docker](https://img.shields.io/badge/docker-%230db7ed.svg?style=for-the-badge&logo=docker&logoColor=white) ![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-2088FF?style=for-the-badge&logo=github-actions&logoColor=white)
+![Google Cloud](https://img.shields.io/badge/GoogleCloud-%234285F4.svg?style=for-the-badge&logo=google-cloud&logoColor=white) ![Terraform](https://img.shields.io/badge/terraform-%235835CC.svg?style=for-the-badge&logo=terraform&logoColor=white) ![Docker](https://img.shields.io/badge/docker-%230db7ed.svg?style=for-the-badge&logo=docker&logoColor=white) ![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-2088FF?style=for-the-badge&logo=github-actions&logoColor=white) ![Firebase](https://img.shields.io/badge/firebase-%23039BE5.svg?style=for-the-badge&logo=firebase)
 
-**Backend & AI:**
-![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54) ![FastAPI](https://img.shields.io/badge/FastAPI-005571?style=for-the-badge&logo=fastapi) ![Gemini](https://img.shields.io/badge/Google%20Gemini-8E75B2?style=for-the-badge&logo=google%20gemini&logoColor=white) ![Vertex AI](https://img.shields.io/badge/Vertex%20AI-4285F4?style=for-the-badge&logo=google-cloud&logoColor=white) ![BigQuery](https://img.shields.io/badge/BigQuery-669DF6?style=for-the-badge&logo=googlebigquery&logoColor=white) ![Firestore](https://img.shields.io/badge/Firestore-FFCA28?style=for-the-badge&logo=firebase&logoColor=white) ![Slack](https://img.shields.io/badge/Slack-4A154B?style=for-the-badge&logo=slack&logoColor=white)
+**AI Agent & Backend:**
+![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54) ![FastAPI](https://img.shields.io/badge/FastAPI-005571?style=for-the-badge&logo=fastapi) ![LangChain](https://img.shields.io/badge/LangChain-1C3C3C?style=for-the-badge&logo=langchain&logoColor=white) ![Gemini](https://img.shields.io/badge/Google%20Gemini-8E75B2?style=for-the-badge&logo=google%20gemini&logoColor=white) ![BigQuery](https://img.shields.io/badge/BigQuery-669DF6?style=for-the-badge&logo=googlebigquery&logoColor=white) ![Vertex AI](https://img.shields.io/badge/Vertex%20AI-4285F4?style=for-the-badge&logo=google-cloud&logoColor=white)
 
-**Frontend:**
+**Frontend & UX:**
 ![Next JS](https://img.shields.io/badge/Next-black?style=for-the-badge&logo=next.js&logoColor=white) ![React](https://img.shields.io/badge/react-%2320232a.svg?style=for-the-badge&logo=react&logoColor=%2361DAFB) ![TypeScript](https://img.shields.io/badge/typescript-%23007ACC.svg?style=for-the-badge&logo=typescript&logoColor=white) ![TailwindCSS](https://img.shields.io/badge/tailwindcss-%2338B2AC.svg?style=for-the-badge&logo=tailwind-css&logoColor=white) ![Vite](https://img.shields.io/badge/vite-%23646CFF.svg?style=for-the-badge&logo=vite&logoColor=white)
+
+**Integrations:**
+![Slack](https://img.shields.io/badge/Slack-4A154B?style=for-the-badge&logo=slack&logoColor=white) ![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?style=for-the-badge&logo=discord&logoColor=white) ![Pydantic](https://img.shields.io/badge/Pydantic-E92063?style=for-the-badge&logo=pydantic&logoColor=white)
 
 ---
 
