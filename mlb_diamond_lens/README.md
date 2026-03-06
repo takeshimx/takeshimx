@@ -94,6 +94,123 @@ An AI-powered analytics interface for exploring Major League Baseball statistics
   - **MatchupAgent**: Expert in batter vs. pitcher head-to-head analytics and historic outcomes.
 - **🏆 Professional Reports**: Generates structured analyst reports with headers, bullet points, and deep insights.
 - **⚖️ Fail-safe Generation**: Code-level guards to ensure complete, natural Japanese sentences without fragments.
+- **🔄 Reflection Loop (Self-Correction)**: Autonomous error recovery mechanism that detects SQL errors or empty query results and self-corrects by analyzing the root cause and retrying with improved parameters (max 2 retries). Intelligently classifies errors as retryable (syntax errors, empty results) vs non-retryable (permission, timeout, schema errors) to avoid wasteful retries.
+
+### 5. MLOps: Prompt Versioning, LLM I/O Logging & Evaluation Gate
+**Status**: ✅ Production-ready
+
+**Capabilities**:
+- **📝 Prompt Versioning**: Externalized LLM prompts as versioned text files (`parse_query_v1.txt`, `routing_v1.txt`) managed via `prompt_registry.py`, enabling version-controlled prompt iteration without code changes
+- **📊 LLM I/O Logging**: Async logging of all LLM interactions (queries, parsed results, latency, errors) to BigQuery via `llm_logger_service.py` for observability and drift detection
+- **🚦 LLM Evaluation Gate**: CI/CD quality gate that runs LLM against a golden dataset (`golden_dataset.json`) and blocks deployment if accuracy drops below 80%
+
+### 6. Human-in-the-Loop (HITL) Feedback System
+**Status**: ✅ Production-ready
+
+**Capabilities**:
+- **👍👎 User Feedback UI**: Thumbs up/down buttons on every AI response with detailed feedback form for negative ratings
+- **📋 Feedback Categories**: Structured categorization (`inaccurate`, `slow`, `irrelevant`, `wrong_player`, `wrong_stats`) with optional free-text reason
+- **🗄️ BigQuery Logging**: All feedback (rating, category, reason) is recorded to BigQuery alongside the original LLM interaction log
+- **🔄 Golden Dataset Pipeline**: Three-step workflow to continuously improve LLM accuracy from user feedback
+
+**HITL Feedback Loop**:
+```
+User rates response 👎 + selects category + writes reason
+         │
+         ▼
+  BigQuery logs (feedback recorded)
+         │
+  ┌──────┴───────┐
+  │   Extract     │  python backend/scripts/extract_golden_dataset.py
+  │   bad queries │  → pending_review.json (with TODO placeholders)
+  └──────┬───────┘
+         ▼
+  ┌──────┴───────┐
+  │  Human Review │  Developer fills in correct expected values
+  │  (manual)     │  → reviewed: true
+  └──────┬───────┘
+         ▼
+  ┌──────┴───────┐
+  │   Approve     │  python backend/scripts/approve_to_golden.py
+  │   to golden   │  → golden_dataset.json (test cases grow)
+  └──────┴───────┘
+         ▼
+  CI/CD Evaluation Gate runs with expanded golden dataset
+```
+
+**API Endpoint**:
+- `POST /api/v1/qa/feedback` - Submit user feedback (rating, category, reason)
+
+### 7. Rate Limiting & Quota Management
+**Status**: ✅ Production-ready
+
+**Capabilities**:
+- **🌐 Global Rate Limit**: 100 requests/minute across all users via custom ASGI middleware
+- **👤 Per-Session Rate Limit**: 20 requests/minute per user (Firebase user_id > Session ID > IP address)
+- **🎯 Per-Endpoint Rate Limit**: Configurable limits per endpoint via slowapi decorators (e.g., AI chat: 5/min, player stats: 10/min, statistics: 10/min)
+- **💰 LLM Token Budget**: Daily token usage cap (default: 1,000,000 tokens/day) with automatic reset at UTC midnight
+- **📊 Monitoring Integration**: All rate limit rejections are logged to Cloud Monitoring custom metrics and BigQuery `llm_interaction_logs`
+- **⚙️ Configurable via `.env`**: All limits are adjustable without code changes
+
+**Architecture**:
+- **In-memory storage**: No Redis dependency — uses Python `dict` + `threading.Lock` for thread-safe counters. Suitable for Cloud Run single-container deployment.
+- **Fixed-window algorithm**: 1-minute sliding windows for rate counting
+- **Middleware stack**: `RequestID → RateLimitMiddleware (Global/Session) → FirebaseAuth → Per-Endpoint (slowapi)`
+- **Graceful 429 responses**: Returns `Retry-After` header with seconds until next window
+
+**Configuration** (`.env`):
+```env
+RATE_LIMIT_GLOBAL_PER_MINUTE=100
+RATE_LIMIT_SESSION_PER_MINUTE=20
+RATE_LIMIT_PLAYER_STATS_PER_MINUTE=10
+RATE_LIMIT_AGENT_CHAT_PER_MINUTE=5
+RATE_LIMIT_STATISTICS_PER_MINUTE=10
+LLM_DAILY_TOKEN_BUDGET=1000000
+RATE_LIMIT_ENABLED=true
+```
+
+### 8. ML Model Monitoring & Data Drift Detection
+**Status**: ✅ Production-ready
+
+**Capabilities**:
+- **📊 Data Drift Detection**: Statistical monitoring of ML model input data distribution changes between seasons using KS test, PSI (Population Stability Index), and mean shift analysis
+- **🗄️ Model Registry & Versioning**: Persist trained ML models (KMeans + StandardScaler) to GCS with version tracking. Metadata logged to BigQuery for model lineage
+- **🔄 Auto-Baseline**: Drift detection automatically references the active model's training season — no manual baseline specification needed
+- **🚦 CI/CD Drift Gate**: Pre-deployment check blocks releases when critical data drift is detected, prompting model retraining
+
+**Architecture**:
+```
+Model Training → GCS (model.joblib) + BigQuery (ml_model_registry)
+       ↓
+Promote to Active → player_segmentation loads from GCS
+       ↓
+CI/CD Drift Check → Compare active model's training data vs latest season
+       ↓
+   ├── none/warning → Deploy proceeds
+   └── critical     → Deploy blocked 🚫 (retrain required)
+```
+
+**Drift Detection Methods**:
+- **KS Test**: Kolmogorov-Smirnov test for distribution shape changes
+- **PSI**: Population Stability Index for overall distribution shift (Warning ≥ 0.1, Critical ≥ 0.2)
+- **Mean Shift**: Percentage change in feature means between seasons
+
+**Model Registry Features**:
+- **GCS Storage**: Versioned model artifacts (`models/{model_type}/{version}/model.joblib`)
+- **BigQuery Metadata**: Version tracking with `algorithm` column (supports KMeans, LightGBM, etc.) and `model_params` JSON for algorithm-specific parameters
+- **Version Promotion**: Active version management with `promote_version()`
+- **Fallback**: `player_segmentation.py` loads from registry if available, falls back to on-the-fly fitting
+
+**API Endpoints**:
+- `POST /api/v1/ml-monitoring/detect-drift` - Detect data drift (auto-baseline from registry)
+- `GET /api/v1/ml-monitoring/drift-history` - Historical drift reports
+- `GET /api/v1/ml-monitoring/drift-summary` - Latest drift status summary
+- `POST /api/v1/model-registry/train` - Train and register a new model version
+- `GET /api/v1/model-registry/versions` - List registered versions
+- `POST /api/v1/model-registry/promote` - Promote a version to active
+- `GET /api/v1/model-registry/active` - Get current active version
+
+**Technologies**: scikit-learn, scipy, joblib, Google Cloud Storage, BigQuery
 
 ### Technical Features
 - **AI-Powered Processing**: Uses Gemini 2.5 Flash for query parsing and response generation
@@ -101,8 +218,9 @@ An AI-powered analytics interface for exploring Major League Baseball statistics
 - **MCP Server Support**: Access MLB stats directly from Claude Desktop and Cursor via Model Context Protocol
 - **Case-insensitive Search**: Flexible player name matching
 - **Dark Theme UI**: Modern, responsive interface optimized for extended use
-- **Secure Access**: Password-protected interface for authorized users
+- **Secure Access**: Firebase Authentication with Google Sign-In and server-side token verification
 - **SQL Injection Protection**: Multi-layered security with input validation and parameterized queries
+- **Rate Limiting**: Multi-tier rate limiting (Global, Per-Session, Per-Endpoint) with LLM token budget tracking
 
 ## 🏗 Architecture
 
@@ -123,7 +241,7 @@ The application follows a sophisticated 4-step pipeline:
 3. **📊 BigQuery Data Retrieval**
    - Executes generated SQL against MLB statistics tables in GCP project `your-project-id`
    - Main tables: `fact_batting_stats_with_risp`, `fact_pitching_stats`
-   - Specialized tables for splits: `tbl_batter_clutch_*`, `tbl_batter_inning_stats`, etc.
+   - Specialized tables for splits: `tbl_batter_clutch_*`, `mart_batter_inning_stats`, etc.
 
 4. **💬 LLM Response Generation** (`ai_service._generate_final_response_with_llm`)
    - Converts structured data back to natural Japanese responses
@@ -136,6 +254,7 @@ The application follows a sophisticated 4-step pipeline:
      - `MatchupAgent`: Handles specific head-to-head player historical comparisons.
    - **LangGraph Implementation**: Each agent maintains its own "Oracle" (Planning), "Executor" (Data Retrieval), and "Synthesizer" (Final Reporting) loop.
    - **Feedback Loop**: Agents can self-correct and perform multiple tool calls if the initial measurement is insufficient.
+   - **Reflection Loop**: Each agent includes a `reflection` node that detects executor errors (SQL syntax, empty results) and feeds diagnostic context back to the LLM for self-correction, with a max retry cap to prevent infinite loops.
    - **Integrated UI**: Pipes structured chart/table metadata directly into the specialized frontend components.
 
 ### Key Configuration System
@@ -149,6 +268,7 @@ The application follows a sophisticated 4-step pipeline:
 ### Frontend
 - **React 19.1.1** - Modern React with latest features
 - **Vite 7.1.2** - Fast build tool and development server
+- **Firebase SDK** - Google Sign-In authentication
 - **Tailwind CSS 4.1.11** - Utility-first CSS framework with dark mode
 - **Lucide React 0.539.0** - Beautiful icon library
 - **ESLint** - Code linting and formatting
@@ -156,6 +276,7 @@ The application follows a sophisticated 4-step pipeline:
 ### Backend
 - **FastAPI** - Modern Python web framework
 - **Uvicorn** - ASGI server for production deployment
+- **Firebase Admin SDK** - Server-side authentication and token verification
 - **MCP Server** - Model Context Protocol server for Claude Desktop/Cursor integration
 - **Google Cloud BigQuery** - Data warehouse for MLB statistics
 - **Google Cloud Storage** - Additional data storage
@@ -188,7 +309,17 @@ BIGQUERY_BATTING_STATS_TABLE_ID=fact_batting_stats_with_risp
 BIGQUERY_PITCHING_STATS_TABLE_ID=fact_pitching_stats
 GEMINI_API_KEY=<your_gemini_api_key>
 GOOGLE_APPLICATION_CREDENTIALS=<path_to_service_account_json>
-VITE_APP_PASSWORD=<your_app_password>
+```
+
+Create a `.env` file in the frontend directory:
+
+```env
+VITE_FIREBASE_API_KEY=<your_firebase_api_key>
+VITE_FIREBASE_AUTH_DOMAIN=<your_project>.firebaseapp.com
+VITE_FIREBASE_PROJECT_ID=<your_project_id>
+VITE_FIREBASE_STORAGE_BUCKET=<your_project>.firebasestorage.app
+VITE_FIREBASE_MESSAGING_SENDER_ID=<your_sender_id>
+VITE_FIREBASE_APP_ID=<your_app_id>
 ```
 
 ### Development
@@ -290,6 +421,73 @@ Advanced multi-step analysis powered by LangGraph. Supports complex reasoning an
   "isChart": true,
   "chartData": [...],
   "processing_time_ms": 12500
+}
+```
+
+---
+
+### Autonomous Agent Streaming API (Server-Sent Events)
+
+**POST** `/api/v1/qa/agentic-stats-stream`
+
+Real-time streaming version of the agent API. Uses Server-Sent Events (SSE) to stream agent reasoning steps and LLM tokens as they are generated.
+
+#### Request Format
+```json
+{
+  "query": "大谷翔平の2024年の打率は？",
+  "session_id": "optional-uuid"
+}
+```
+
+#### Response Format (SSE Stream)
+```
+event: session_start
+data: {"type":"session_start","session_id":"...","query":"..."}
+
+event: routing
+data: {"type":"routing","agent_type":"batter","message":"batterエージェントにルーティングしました"}
+
+event: state_update
+data: {"type":"state_update","node":"oracle","status":"started","message":"質問を分析しています"}
+
+event: token
+data: {"type":"token","content":"大谷","node":"synthesizer"}
+
+event: final_answer
+data: {"type":"final_answer","answer":"大谷翔平選手は2024年シーズンに打率.310を記録しました。","isTable":false,...}
+
+event: stream_end
+data: {"type":"stream_end","message":"処理が完了しました"}
+```
+
+#### Event Types
+- `session_start`: Session initialization
+- `routing`: Agent routing decision
+- `state_update`: Agent node state changes (oracle, executor, synthesizer)
+- `tool_start/tool_end`: Tool execution events
+- `token`: LLM token streaming (real-time response generation)
+- `final_answer`: Complete response with metadata
+- `stream_end`: Stream completion
+- `error`: Error occurred during processing
+
+#### Frontend Integration
+```javascript
+const response = await fetch('/api/v1/qa/agentic-stats-stream', {
+  method: 'POST',
+  headers: {'Content-Type': 'application/json'},
+  body: JSON.stringify({query: "..."})
+});
+
+const reader = response.body.getReader();
+const decoder = new TextDecoder();
+
+while (true) {
+  const {done, value} = await reader.read();
+  if (done) break;
+
+  const text = decoder.decode(value);
+  // Parse SSE format: "event: <type>\ndata: <json>\n\n"
 }
 ```
 
@@ -406,7 +604,7 @@ Analyze OPS impact on win rate with fixed ERA and home runs allowed.
 - **Dark Theme**: Permanent dark mode optimized for extended use
 - **Responsive Design**: Mobile-friendly interface
 - **Real-time Updates**: Live message updates with typing indicators
-- **Password Protection**: Secure access control
+- **Firebase Authentication**: Google Sign-In with server-side token verification
 - **Auto-scroll**: Automatic scrolling to latest messages
 - **Loading States**: Visual feedback during API calls
 - **Error Handling**: Graceful error display and recovery
@@ -460,6 +658,22 @@ git push → Cloud Build Trigger → cloudbuild.yaml execution
 └─────────────────────────────────────┘
   ↓
 ┌─────────────────────────────────────┐
+│ STEP 1.5: LLM Evaluation GATE      │
+│  - Run LLM against golden dataset   │
+│  - Evaluate parse accuracy (≥80%)   │
+│  - Check critical fields            │
+│  ⚠️  If accuracy drops → Build stops │
+└─────────────────────────────────────┘
+  ↓
+┌─────────────────────────────────────┐
+│ STEP 1.6: ML Data Drift Check GATE │
+│  - Auto-detect baseline from        │
+│    Model Registry active version    │
+│  - PSI/KS test on model features    │
+│  ⚠️  If critical drift → Build stops │
+└─────────────────────────────────────┘
+  ↓
+┌─────────────────────────────────────┐
 │ STEP 2: Terraform (Infrastructure)  │
 │  - terraform init                   │
 │  - terraform plan                   │
@@ -506,8 +720,10 @@ git push → Cloud Build Trigger → cloudbuild.yaml execution
 **Key Features:**
 - **Automated testing:** Unit tests run before every deployment
 - **Schema validation gate:** Ensures `query_maps.py` matches live BigQuery schema
+- **LLM evaluation gate:** Validates LLM parse accuracy against golden dataset before deployment
+- **ML drift check gate:** Detects critical data drift in ML model inputs using Model Registry auto-baseline
 - **Security scanning:** Trivy scans Docker images for HIGH/CRITICAL vulnerabilities
-- **Fail-fast approach:** Test, schema, or security failures prevent deployment
+- **Fail-fast approach:** Test, schema, LLM accuracy, or security failures prevent deployment
 - Infrastructure changes are applied before application deployment
 - Terraform only executes if infrastructure changes are detected
 - Docker images are built and deployed after infrastructure updates
@@ -515,9 +731,18 @@ git push → Cloud Build Trigger → cloudbuild.yaml execution
 
 ### Security
 
-The application implements multiple layers of security to protect against SQL injection and other attacks:
+The application implements multiple layers of security to protect against SQL injection, unauthorized access, and other attacks:
 
 **Security Measures:**
+
+0. **Firebase Authentication**:
+   - Google Sign-In on the frontend via Firebase SDK (`signInWithPopup` + `GoogleAuthProvider`)
+   - Server-side token verification via Firebase Admin SDK (`firebase-admin`)
+   - Pure ASGI middleware (`FirebaseAuthMiddleware`) validates `Authorization: Bearer <token>` on all API requests
+   - Public paths (`/health`, `/docs`, etc.) are excluded from authentication
+   - User identity (`user_id`, `email`) is extracted and passed to endpoints for per-user logging
+   - Content Security Policy (CSP) configured to allow Google/Firebase authentication domains
+
 1. **Input Validation** (`_validate_query_params`):
    - Validates all LLM-generated parameters before SQL generation
    - Checks for SQL keywords (SELECT, UNION, DROP, etc.)
@@ -535,6 +760,14 @@ The application implements multiple layers of security to protect against SQL in
    - ORDER BY clauses use only pre-defined columns from `METRIC_MAP`
    - Direct user input never used in ORDER BY clauses
 
+4. **Rate Limiting** (`RateLimitMiddleware` + `slowapi`):
+   - Global rate limit (100 req/min) via custom ASGI middleware
+   - Per-session rate limit (20 req/min) keyed by Firebase user_id, session ID, or IP
+   - Per-endpoint rate limits via slowapi decorators with dynamic `.env` configuration
+   - LLM token budget (daily cap) to prevent runaway API costs
+   - All rejections logged to Cloud Monitoring and BigQuery `llm_interaction_logs`
+   - In-memory storage (no Redis) — suitable for Cloud Run single-container deployment
+
 **Test Coverage:**
 - `test_security.py`: SQL injection attack patterns and input validation
 - Tests validate both blocking malicious inputs and allowing legitimate ones
@@ -543,10 +776,13 @@ The application implements multiple layers of security to protect against SQL in
 
 The project includes comprehensive unit tests for critical business logic:
 
-**Test Coverage (62 tests):**
+**Test Coverage (95+ tests):**
 - `test_query_maps.py` (21 tests): Configuration validation and data structure integrity
 - `test_build_dynamic_sql.py` (28 tests): SQL generation logic for all query types
 - `test_security.py` (13 tests): SQL injection prevention and input validation
+- `test_reflection_loop.py` (11 tests): Reflection loop self-correction logic, error classification, and executor empty result detection
+- `test_data_drift.py` (17 tests): Data drift detection logic (PSI, KS test, severity determination)
+- `test_model_registry.py` (5+ tests): Model registry service (train, register, load, promote with mocked GCS/BigQuery)
 
 **Run tests locally:**
 ```bash
@@ -646,6 +882,7 @@ terraform apply -var="notification_email=your-email@example.com"
 - `api/errors`: Error count by endpoint and error type
 - `query/processing_time`: Query processing duration by query type (ms)
 - `bigquery/latency`: BigQuery execution time by query type (ms)
+- `rate_limit/rejections`: Rate limit rejection count by endpoint and limit type (global, session, endpoint)
 
 **Structured Logging:**
 - JSON-formatted logs compatible with Google Cloud Logging
@@ -684,6 +921,8 @@ diamond-lens/
 ├── frontend/                 # React frontend application
 │   ├── src/
 │   │   ├── App.jsx          # Main application component
+│   │   ├── firebase.js      # Firebase SDK configuration
+│   │   ├── hooks/useAuth.js # Google Sign-In authentication hook
 │   │   ├── main.jsx         # Application entry point
 │   │   └── index.css        # Global styles
 │   ├── tailwind.config.js   # Tailwind CSS configuration
@@ -693,15 +932,39 @@ diamond-lens/
 │   ├── app/
 │   │   ├── main.py          # FastAPI application
 │   │   ├── api/endpoints/   # API route handlers
+│   │   ├── middleware/       # ASGI middleware
+│   │   │   ├── firebase_auth.py    # Firebase token verification middleware
+│   │   │   ├── rate_limit.py       # Global/Per-session rate limiting (in-memory)
+│   │   │   └── request_id.py       # Request ID tracking
 │   │   ├── services/        # Business logic services
 │   │   │   ├── ai_service.py       # AI query processing
 │   │   │   ├── bigquery_service.py # BigQuery client
-│   │   │   └── monitoring_service.py # Custom metrics
+│   │   │   ├── firebase_service.py # Firebase Admin SDK initialization
+│   │   │   ├── llm_logger_service.py # LLM I/O logging to BigQuery (with user_id)
+│   │   │   ├── data_drift_service.py  # Data drift detection (PSI, KS test)
+│   │   │   ├── ml_monitoring_logger.py # ML monitoring logs to BigQuery
+│   │   │   ├── model_registry_service.py # Model Registry & Versioning (GCS + BQ)
+│   │   │   ├── monitoring_service.py # Custom metrics
+│   │   │   └── token_budget_service.py # Daily LLM token budget (in-memory)
+│   │   ├── prompts/         # Versioned LLM prompt templates
+│   │   │   ├── parse_query_v1.txt  # Query parsing prompt
+│   │   │   └── routing_v1.txt      # Agent routing prompt
 │   │   ├── utils/           # Utility functions
 │   │   │   └── structured_logger.py # JSON logging
-│   │   └── config/          # Configuration and mappings
-│   ├── tests/               # Unit tests (49 tests)
-│   ├── scripts/             # Validation and utility scripts
+│   │   ├── config/          # Configuration and mappings
+│   │   │   ├── prompt_registry.py  # Prompt version management
+│   │   │   └── settings.py        # App settings (rate limits, budgets, etc.)
+│   │   └── api/
+│   │       └── rate_limit.py      # slowapi per-endpoint rate limiter
+│   ├── tests/               # Unit tests + golden dataset
+│   │   ├── golden_dataset.json    # LLM evaluation test cases
+│   │   └── pending_review.json    # HITL feedback pending human review
+│   ├── scripts/             # Validation and evaluation scripts
+│   │   ├── extract_golden_dataset.py  # Extract bad-rated queries from BigQuery
+│   │   ├── approve_to_golden.py       # Promote reviewed cases to golden dataset
+│   │   ├── evaluate_llm_accuracy.py   # CI/CD LLM accuracy gate
+│   │   ├── check_data_drift.py        # CI/CD ML drift check gate
+│   │   └── create_drift_monitoring_table.py # BigQuery table setup
 │   ├── requirements.txt     # Python dependencies
 │   └── Dockerfile           # Backend container
 ├── terraform/                # Infrastructure as Code

@@ -40,6 +40,10 @@ graph TB
         Marts[Marts Layer<br/>tbl_batter_clutch_risp<br/>tbl_batter_clutch_bases_loaded<br/>tbl_batter_monthly_*]
     end
 
+    subgraph "Authentication Layer"
+        FirebaseAuth[Firebase Authentication<br/>Google Sign-In<br/>ID Token Verification]
+    end
+
 subgraph "Application Layer - Cloud Run"
         Backend[mlb-diamond-lens-api<br/>FastAPI<br/>REST API endpoints]
         Frontend[mlb-diamond-lens-frontend<br/>React + Vite<br/>User dashboard]
@@ -60,6 +64,13 @@ subgraph "Application Layer - Cloud Run"
         Workflows[Cloud Workflows<br/>mlb-pipeline<br/>Orchestrates entire pipeline]
     end
 
+    subgraph "HITL Feedback Loop"
+        FeedbackUI[Feedback UI<br/>👍👎 + Category + Reason]
+        FeedbackBQ[(BigQuery<br/>llm_interaction_logs<br/>user_rating, category, reason)]
+        PendingReview[pending_review.json<br/>Human Review]
+        GoldenDataset[golden_dataset.json<br/>LLM Evaluation]
+    end
+
     subgraph "Monitoring & Alerts"
         CloudMonitoring[Cloud Monitoring<br/>Custom Metrics<br/>Alert Policies<br/>Dashboards]
         Discord[Discord Webhook<br/>Pipeline status notifications]
@@ -77,6 +88,8 @@ subgraph "Application Layer - Cloud Run"
 
     Marts --> Backend
     Marts --> MCPServer
+    Frontend --> FirebaseAuth
+    FirebaseAuth --> Backend
     Backend --> StandardAI
     Backend --> Supervisor
     MCPServer --> StandardAI
@@ -91,9 +104,18 @@ subgraph "Application Layer - Cloud Run"
     Workflows --> Staging
     Workflows --> Discord
 
+    Frontend --> FeedbackUI
+    FeedbackUI --> FeedbackBQ
+    FeedbackBQ --> PendingReview
+    PendingReview --> GoldenDataset
+
     Backend --> CloudMonitoring
     Frontend --> CloudMonitoring
 
+    style FeedbackUI fill:#e91e63,color:#fff
+    style FeedbackBQ fill:#34a853,color:#fff
+    style GoldenDataset fill:#9c27b0,color:#fff
+    style FirebaseAuth fill:#ff9800,color:#fff
     style ETL fill:#4285f4,color:#fff
     style Backend fill:#4285f4,color:#fff
     style Frontend fill:#4285f4,color:#fff
@@ -112,10 +134,15 @@ subgraph "Application Layer - Cloud Run"
 | **ETL** | Python Flask, Cloud Run | Data extraction and loading |
 | **Data Warehouse** | BigQuery | Centralized data storage |
 | **Transformation** | dbt, Cloud Build | Data modeling and quality |
+| **Authentication** | Firebase Auth (Google Sign-In), Firebase Admin SDK | User authentication and server-side token verification |
 | **Backend** | FastAPI, Cloud Run | REST API for analytics |
 | **Frontend** | React + Vite, Cloud Run | User interface |
 | **MCP Server** | Model Context Protocol | Claude Desktop/Cursor integration |
 | **AI Agent** | LangGraph, Gemini 2.5 Flash | Multi-step reasoning & Tool use |
+| **MLOps** | Prompt Registry, Golden Dataset, BigQuery Logging | Prompt versioning, LLM evaluation gate, I/O observability |
+| **ML Monitoring** | Data Drift Service, Model Registry, GCS, BigQuery | Data drift detection (PSI/KS), model versioning & auto-baseline CI/CD gate |
+| **HITL Feedback** | Feedback UI, BigQuery, pending_review.json | User feedback collection, golden dataset expansion pipeline |
+| **Rate Limiting** | Custom ASGI Middleware, slowapi, In-Memory Counters | Multi-tier rate limiting (Global/Session/Endpoint) + LLM token budget |
 | **Orchestration** | Cloud Workflows, Cloud Scheduler | Pipeline automation |
 | **Monitoring** | Cloud Monitoring, Discord Webhooks | Custom metrics, alerts, dashboards, pipeline notifications |
 
@@ -159,7 +186,28 @@ subgraph "Application Layer - Cloud Run"
 - **Core**: `fact_batting_stats_master` (incremental), `statcast_2025_partitioned`
 - **Marts**: `tbl_batter_clutch_risp`, `tbl_batter_monthly_performance`
 
-### 3. Backend API
+### 3. Authentication (Firebase)
+
+| Property | Value |
+|----------|-------|
+| **Provider** | Firebase Authentication (Google Sign-In) |
+| **Frontend SDK** | Firebase JS SDK (`signInWithPopup` + `GoogleAuthProvider`) |
+| **Backend SDK** | Firebase Admin SDK (`firebase-admin`) |
+| **Middleware** | `FirebaseAuthMiddleware` (Pure ASGI) |
+| **Token Format** | `Authorization: Bearer <Firebase ID Token>` |
+| **Public Paths** | `/`, `/health`, `/debug/routes`, `/docs`, `/openapi.json`, `/redoc` |
+| **User Tracking** | `user_id` extracted from token, logged to BigQuery via `llm_logger_service.py` |
+| **CSP** | `nginx.conf` allows `apis.google.com`, `gstatic.com`, `accounts.google.com`, `*.firebaseapp.com` |
+
+**Authentication Flow:**
+1. User clicks "Sign in with Google" on frontend
+2. Firebase SDK opens Google OAuth popup and returns ID token
+3. Frontend attaches `Authorization: Bearer <token>` to all API requests
+4. Backend `FirebaseAuthMiddleware` intercepts requests and verifies token via Firebase Admin SDK
+5. Verified `user_id` and `email` are stored in `request.state` for downstream use
+6. Unauthenticated requests to protected endpoints receive `401 Unauthorized`
+
+### 4. Backend API
 
 | Property | Value |
 |----------|-------|
@@ -173,7 +221,7 @@ subgraph "Application Layer - Cloud Run"
 | **Endpoints** | `/api/refresh` (POST) - Refresh data cache |
 | **Dependencies** | BigQuery `mlb_analytics_dash_25` |
 
-### 4. Frontend Dashboard
+### 5. Frontend Dashboard
 
 | Property | Value |
 |----------|-------|
@@ -187,7 +235,7 @@ subgraph "Application Layer - Cloud Run"
 | **Endpoints** | `/api/cache/clear` (POST) - Clear frontend cache |
 | **Dependencies** | Backend API |
 
-### 5. Agentic AI System (Supervisor + LangGraph)
+### 6. Agentic AI System (Supervisor + LangGraph)
 
 | Property | Value |
 |----------|-------|
@@ -197,11 +245,217 @@ subgraph "Application Layer - Cloud Run"
 | **Supervisor** | `SupervisorAgent` - Parses intent and routes to Stats or Matchup |
 | **Specialized Agents** | `StatsAgent` (Season/Trend), `MatchupAgent` (Head-to-Head) |
 | **State Management** | `AgentState` (TypedDict with message history, UI meta, and specialized analytics data) |
-| **Nodes per Agent** | Oracle (Planning), Action Tool, Synthesizer (Reporting) |
-| **Capabilities** | Intelligently handles complex vs specific queries, automated visualization, and professional analyst reports |
+| **Nodes per Agent** | Oracle (Planning), Executor (Tool Execution), Reflection (Self-Correction), Synthesizer (Reporting) |
+| **Reflection Loop** | Detects SQL errors and empty results in Executor, feeds diagnostic context to LLM for self-correction (max 2 retries). Classifies errors as retryable (syntax, empty result) vs non-retryable (permission, timeout, schema) |
+| **Capabilities** | Intelligently handles complex vs specific queries, automated visualization, professional analyst reports, and autonomous error recovery |
 | **Frontend Sync** | Structured `matchupData` or `chartData` triggers specialized UI components |
+| **Streaming Mode** | Server-Sent Events (SSE) with real-time token and state updates via `/api/v1/qa/agentic-stats-stream` |
 
-### 6. Orchestration
+### 6.1. Real-Time Streaming Architecture (SSE)
+
+| Property | Value |
+|----------|-------|
+| **Protocol** | Server-Sent Events (SSE) |
+| **Content-Type** | `text/event-stream` |
+| **Backend Engine** | FastAPI StreamingResponse + AsyncGenerator |
+| **LangGraph Integration** | `astream_events(version="v2")` for event streaming |
+| **Event Types** | `session_start`, `routing`, `state_update` (oracle, executor, synthesizer, reflection), `tool_start`, `tool_end`, `token`, `final_answer`, `stream_end`, `error` |
+| **Frontend** | ReadableStream API with SSE parsing |
+| **UI Updates** | Real-time streaming status display: `準備中` → `質問を分析中 🤔` → `データ取得中 🔍` → `🔄 エラーを分析し、修正を試みています` (reflection) → `回答生成中 ✍️` |
+| **Token Accumulation** | LLM tokens streamed incrementally and accumulated in frontend |
+
+**Streaming Data Flow:**
+
+```mermaid
+sequenceDiagram
+    participant User as ユーザー
+    participant Frontend as React Frontend
+    participant Backend as FastAPI Backend
+    participant LangGraph as LangGraph Agent
+    participant LLM as Gemini 2.5 Flash
+
+    User->>Frontend: クエリ入力 & Enter
+    Frontend->>Frontend: handleSendMessageStream()
+    Frontend->>Frontend: isStreaming: true<br/>streamingStatus: '準備中...'
+
+    Frontend->>Backend: POST /agentic-stats-stream
+    activate Backend
+    Backend->>Backend: SupervisorAgent.route_query()
+    Backend-->>Frontend: event: routing<br/>data: {agent_type: "batter"}
+    Frontend->>Frontend: streamingStatus: 'batterエージェントで処理中'
+
+    Backend->>LangGraph: agent.app.astream_events()
+    activate LangGraph
+    LangGraph->>LangGraph: oracle node start
+    LangGraph-->>Backend: on_chain_start (oracle)
+    Backend-->>Frontend: event: state_update<br/>data: {node: "oracle"}
+    Frontend->>Frontend: streamingStatus: '質問を分析中 🤔'
+
+    LangGraph->>LangGraph: executor node start
+    LangGraph-->>Backend: on_chain_start (executor)
+    Backend-->>Frontend: event: state_update<br/>data: {node: "executor"}
+    Frontend->>Frontend: streamingStatus: 'データ取得中 🔍'
+
+    LangGraph->>LLM: BigQuery tool call
+
+    opt Reflection Loop (SQL error or empty result)
+        LangGraph->>LangGraph: reflection node start
+        LangGraph-->>Backend: on_chain_start (reflection)
+        Backend-->>Frontend: event: state_update<br/>data: {node: "reflection"}
+        Frontend->>Frontend: streamingStatus: '🔄 エラーを分析し、修正を試みています'
+        LangGraph->>LangGraph: oracle node (retry)
+        LangGraph->>LangGraph: executor node (retry)
+        LangGraph->>LLM: Corrected BigQuery tool call
+    end
+
+    LangGraph->>LangGraph: synthesizer node start
+    LangGraph-->>Backend: on_chain_start (synthesizer)
+    Backend-->>Frontend: event: state_update<br/>data: {node: "synthesizer"}
+    Frontend->>Frontend: streamingStatus: '回答生成中 ✍️'
+
+    LLM-->>LangGraph: token stream
+    loop トークンストリーミング
+        LangGraph-->>Backend: on_chat_model_stream
+        Backend->>Backend: accumulated_answer += token
+        Backend-->>Frontend: event: token<br/>data: {content: "大"}
+        Frontend->>Frontend: content += "大"
+        LangGraph-->>Backend: on_chat_model_stream
+        Backend-->>Frontend: event: token<br/>data: {content: "谷"}
+        Frontend->>Frontend: content += "谷"
+    end
+
+    deactivate LangGraph
+    Backend->>Backend: ストリーミング完了
+    Backend-->>Frontend: event: final_answer<br/>data: {answer: "...", isTable: false}
+    Frontend->>Frontend: isStreaming: false<br/>streamingStatus: undefined
+
+    Backend-->>Frontend: event: stream_end
+    deactivate Backend
+    Frontend->>User: 完全な応答を表示
+```
+
+**Key Implementation Details:**
+
+| Component | Implementation | Purpose |
+|-----------|---------------|---------|
+| **Backend Endpoint** | `ai_analytics_endpoints.py` Line 372-432 | SSE streaming endpoint `/qa/agentic-stats-stream` |
+| **Streaming Service** | `ai_agent_service.py` Line 558-780 | `run_mlb_agent_stream()` with LangGraph `astream_events()` |
+| **SSE Formatter** | `utils/streaming.py` | `format_sse()` converts dict to SSE format |
+| **Frontend Handler** | `App.jsx` Line 1167-1371 | `handleSendMessageStream()` with ReadableStream parsing |
+| **Event Routing** | `handleSendMessageStream()` switch cases | Maps event types to UI state updates |
+| **Token Accumulation** | Backend: `accumulated_answer` variable | Collects tokens during streaming, sends as `final_answer` |
+| **Reflection Loop** | `should_reflect()` + `reflection_node()` in each agent | Detects SQL errors/empty results, feeds diagnostic context to LLM, retries with corrected parameters (max 2 retries) |
+| **Reflection State** | `AgentState`: `retry_count`, `max_retries`, `last_error`, `last_query_result_count`, `original_user_intent` | Tracks reflection loop state across graph nodes |
+| **LLM Logging (Reflection)** | `llm_logger_service.py`: `is_retry`, `retry_count`, `retry_reason` | Logs reflection loop metadata to BigQuery for observability |
+
+### 7. MLOps: Prompt Versioning, LLM I/O Logging & Evaluation Gate
+
+| Property | Value |
+|----------|-------|
+| **Prompt Versioning** | Externalized prompts as versioned text files (`parse_query_v1.txt`, `routing_v1.txt`) |
+| **Prompt Registry** | `prompt_registry.py` manages prompt loading and version switching |
+| **LLM I/O Logging** | `llm_logger_service.py` logs all LLM interactions to BigQuery asynchronously |
+| **Logged Fields** | User query, parsed result, prompt version, latency, errors, routing result, user feedback, reflection loop metadata (is_retry, retry_count, retry_reason) |
+| **Evaluation Gate** | `evaluate_llm_accuracy.py` runs LLM against golden dataset in CI/CD |
+| **Golden Dataset** | `golden_dataset.json` with test cases covering batting, pitching, splits, career (expandable via HITL) |
+| **Pass Threshold** | 80% accuracy required to proceed with deployment |
+| **Critical Fields** | `query_type` mismatch causes immediate failure regardless of overall accuracy |
+
+### 8a. Rate Limiting & Quota Management
+
+| Property | Value |
+|----------|-------|
+| **Global Rate Limit** | 100 requests/minute (all users combined) via custom ASGI middleware (`RateLimitMiddleware`) |
+| **Per-Session Rate Limit** | 20 requests/minute per user (keyed by Firebase user_id > Session ID > IP) |
+| **Per-Endpoint Rate Limit** | Configurable via slowapi decorators: AI chat (5/min), Player stats (10/min), Statistics (10/min) |
+| **LLM Token Budget** | 1,000,000 tokens/day (in-memory counter, auto-resets at UTC midnight) |
+| **Storage** | In-memory (`dict` + `threading.Lock`) — no Redis dependency |
+| **Algorithm** | Fixed-window (1-minute windows, UNIX timestamp // 60) |
+| **429 Response** | Returns `Retry-After` header with seconds until next window |
+| **Monitoring** | Rejections logged to Cloud Monitoring (`rate_limit/rejections`) and BigQuery (`llm_interaction_logs`) |
+| **Configuration** | All limits configurable via `.env` / `settings.py` without code changes |
+| **Exempt Paths** | `/`, `/health`, `/debug/routes`, `/docs`, `/openapi.json`, `/redoc` |
+
+**Middleware Execution Order:**
+```
+Request → RequestIDMiddleware → RateLimitMiddleware (Global/Session check) → FirebaseAuthMiddleware → Per-Endpoint slowapi → Endpoint Handler
+```
+
+**Key Files:**
+
+| File | Purpose |
+|------|---------|
+| `middleware/rate_limit.py` | Custom ASGI middleware for Global/Per-Session rate limiting |
+| `api/rate_limit.py` | slowapi `Limiter` instance with session/IP key function |
+| `services/token_budget_service.py` | Daily LLM token budget tracking (in-memory singleton) |
+| `config/settings.py` | All rate limit configuration values |
+| `main.py` | Middleware registration, slowapi exception handler, 429 logging |
+
+### 8b. Human-in-the-Loop (HITL) Feedback System
+
+| Property | Value |
+|----------|-------|
+| **Feedback UI** | Thumbs up/down on every bot response, detailed form for negative ratings |
+| **Feedback Categories** | `inaccurate`, `slow`, `irrelevant`, `wrong_player`, `wrong_stats` |
+| **Storage** | Feedback logged to BigQuery `llm_interaction_logs` table with `user_rating`, `feedback_category`, `feedback_reason` |
+| **API Endpoint** | `POST /api/v1/qa/feedback` |
+| **Extract Script** | `extract_golden_dataset.py` fetches bad-rated queries → `pending_review.json` |
+| **Approve Script** | `approve_to_golden.py` promotes reviewed cases → `golden_dataset.json` |
+| **Review Process** | Manual: developer edits `pending_review.json`, fills correct `expected` values, sets `reviewed: true` |
+
+**HITL Feedback Loop**:
+
+```mermaid
+graph TD
+    A[User rates response 👎] --> B[BigQuery: feedback logged]
+    B --> C[extract_golden_dataset.py]
+    C --> D[pending_review.json<br/>TODOs as placeholders]
+    D --> E[Developer reviews<br/>fills correct expected values]
+    E --> F[approve_to_golden.py]
+    F --> G[golden_dataset.json<br/>test cases expanded]
+    G --> H[CI/CD Evaluation Gate<br/>LLM accuracy checked]
+    H -->|Accuracy ≥ 80%| I[Deploy]
+    H -->|Accuracy < 80%| J[Block: Fix prompts]
+    J --> H
+```
+
+### 8c. ML Model Monitoring & Data Drift Detection
+
+| Property | Value |
+|----------|-------|
+| **Data Drift Service** | `data_drift_service.py` — KS test, PSI, mean shift analysis |
+| **Model Registry** | `model_registry_service.py` — train, register, load, promote model versions |
+| **Model Storage** | GCS: `gs://diamond-lens-models/models/{model_type}/{version}/model.joblib` |
+| **Metadata Storage** | BigQuery: `ml_model_registry` table (version, algorithm, training_season, gcs_path, model_params, is_active) |
+| **Supported Algorithms** | `algorithm` column: KMeans, LightGBM, etc. with generic `model_params` JSON |
+| **Drift Detection** | PSI (Warning ≥ 0.1, Critical ≥ 0.2), KS test (p-value < 0.05), mean shift % |
+| **Auto-Baseline** | `detect-drift` endpoint auto-detects `baseline_season` from active model's `training_season` |
+| **CI/CD Gate** | `check_data_drift.py` blocks deployment on critical drift (exit code 1) |
+| **Monitoring Logger** | `ml_monitoring_logger.py` logs drift reports to BigQuery |
+| **Segmentation Integration** | `player_segmentation.py` loads active model from registry, falls back to on-the-fly fitting |
+
+**API Endpoints:**
+- `POST /api/v1/ml-monitoring/detect-drift` — Data drift detection (auto-baseline from registry)
+- `GET /api/v1/ml-monitoring/drift-history` — Historical drift reports
+- `GET /api/v1/ml-monitoring/drift-summary` — Latest drift status
+- `POST /api/v1/model-registry/train` — Train & register new model version
+- `GET /api/v1/model-registry/versions` — List registered versions
+- `POST /api/v1/model-registry/promote` — Promote version to active
+- `GET /api/v1/model-registry/active` — Get current active version
+
+**Key Files:**
+
+| File | Purpose |
+|------|---------|
+| `services/data_drift_service.py` | Core drift detection logic (PSI, KS test, mean shift) |
+| `services/model_registry_service.py` | Model Registry: train, GCS upload, BigQuery metadata, load, promote |
+| `services/ml_monitoring_logger.py` | Drift report logging to BigQuery |
+| `services/player_segmentation.py` | Loads active model from registry or fits new |
+| `endpoints/drift_monitoring_endpoints.py` | Drift detection API endpoints with auto-baseline |
+| `endpoints/model_registry_endpoints.py` | Model registry API endpoints |
+| `scripts/check_data_drift.py` | CI/CD drift check gate script |
+
+### 8. Orchestration
 
 | Property | Value |
 |----------|-------|
@@ -507,6 +761,7 @@ The Diamond Lens application has comprehensive monitoring and alerting implement
 - `custom.googleapis.com/diamond-lens/api/errors` - Error count by type (validation, bigquery, llm, null_response)
 - `custom.googleapis.com/diamond-lens/query/processing_time` - Query processing time by query type
 - `custom.googleapis.com/diamond-lens/bigquery/latency` - BigQuery query latency
+- `custom.googleapis.com/diamond-lens/rate_limit/rejections` - Rate limit rejection count by endpoint and limit type (global, session, endpoint)
 
 **Monitoring Dashboard**:
 - Uptime metrics (backend/frontend availability)
