@@ -10,7 +10,9 @@ An AI-powered analytics interface for exploring Major League Baseball statistics
 - **💬 Chat Mode**: Natural language queries in Japanese with AI-powered responses
 - **⚡ Quick Questions**: Pre-defined common baseball queries for instant results
 - **⚙️ Custom Query Builder**: Advanced analytics with custom situational filters
-- **🤖 Autonomous Agent Mode (NEW)**: High-performance reasoning agent using LangGraph for multi-step data exploration and professional analysis
+- **🤖 Autonomous Agent Mode**: `ChatOrchestrator` (single-LLM-call chat via tool_use loop) + `StrategyAgent` (LangGraph for cross-domain strategy reports)
+- **🎤 Voice Input**: Microphone-based audio capture (MediaRecorder API) with backend transcription, injected directly into the query field
+- **📊 Table Response Format**: Per-query format selection (table / text); structured responses render as a transposable `DataTable` with automatic decimal-column formatting and grouping support
 
 **Analytics Capabilities**:
 - **Batting Statistics**: Season stats, splits, and advanced Statcast metrics
@@ -52,6 +54,7 @@ An AI-powered analytics interface for exploring Major League Baseball statistics
 
 **Capabilities**:
 - **🎯 K-means Clustering**: Automated player type classification using unsupervised learning
+- **🧠 FT-Transformer + K-means (Experimental)**: Self-supervised FT-Transformer encoder learns feature interactions via Self-Attention, then K-means clusters the learned embeddings for more nuanced player grouping
 - **Multi-dimensional Analysis**: Segment players based on 4-6 performance metrics
 - **Interactive Visualization**: Scatter plots with cluster-based color coding
 - **Cluster Profiling**: Statistical summaries for each player segment
@@ -74,7 +77,7 @@ An AI-powered analytics interface for exploring Major League Baseball statistics
 - `GET /api/v1/segmentation/batters` - Get batter segmentation with K-means clustering
 - `GET /api/v1/segmentation/pitchers` - Get pitcher segmentation with K-means clustering
 
-**Technologies**: React, Recharts, scikit-learn, pandas, FastAPI
+**Technologies**: React, Recharts, scikit-learn, PyTorch, pandas, FastAPI
 
 **Analysis Notebooks**:
 - `analysis/player_segmentation.ipynb` - K-means clustering analysis with visualizations
@@ -82,25 +85,27 @@ An AI-powered analytics interface for exploring Major League Baseball statistics
 **Business Applications**:
 - **Scouting Efficiency**: Categorize prospects by performance profile
 
-### 4. Autonomous Analyst Agent (Supervisor + LangGraph)
-**Status**: ✅ Production-ready with specialized agents powered by LangGraph
+### 4. Autonomous Analyst Agent (ChatOrchestrator + StrategyAgent)
+**Status**: ✅ Production-ready (chat path refactored 2026-05-17)
+
+**Architecture overview**:
+- **Chat path** — `ChatOrchestrator`: a single-class engine built on **raw `google-genai` SDK + `tool_use` loop**. Replaces the legacy `SupervisorAgent` + 4 LangGraph sub-agents. Default `synthesize_response=False` returns Markdown-formatted tool data after just **1 LLM call**, reducing the previous 4-call chain to 1.
+- **Strategy path** — `StrategyAgent` (retained LangGraph): a 5-node `Planner → ParallelExecutor → Aggregator → Reflection → Strategist` pipeline for cross-domain strategy reports.
 
 **Capabilities**:
-- **🧠 Multi-Agent Orchestration**: Uses a `SupervisorAgent` to intelligently route queries to specialized agents (`StatsAgent`, `MatchupAgent`), each orchestrated by **LangGraph**.
-- **🔍 Reasoning Visualization**: Live display of the autonomous reasoning steps across different specialized graph nodes.
-- **📊 Adaptive UI**: Automatically switches between narrative reports, interactive charts, and data tables based on found data.
-- **⚔️ Specialized Agents**:
-  - **StatsAgent**: Expert in team/player season stats, trends, and group comparisons.
-  - **MatchupAgent**: Expert in batter vs. pitcher head-to-head analytics and historic outcomes.
-- **🏆 Professional Reports**: Generates structured analyst reports with headers, bullet points, and deep insights.
-- **⚖️ Fail-safe Generation**: Code-level guards to ensure complete, natural Japanese sentences without fragments.
-- **🔄 Reflection Loop (Self-Correction)**: Autonomous error recovery mechanism that detects SQL errors or empty query results and self-corrects by analyzing the root cause and retrying with improved parameters (max 2 retries). Intelligently classifies errors as retryable (syntax errors, empty results) vs non-retryable (permission, timeout, schema errors) to avoid wasteful retries.
+- **🧠 LLM-driven NLU via tool_use**: The orchestrator's outer LLM directly extracts structured arguments (`name`, `season`, `query_type`, `metrics`, …) — no internal NLU LLM call inside the tool.
+- **🔧 Common Tools**: `backend/app/services/tools/` houses `get_batter_stats_tool`, `get_pitcher_stats_tool`, `mlb_matchup_history_tool`, `mlb_matchup_analytics_tool` shared by both paths. Optional `query_semantic_metrics_tool` for dbt Semantic Layer (Cloud Run only when `USE_SEMANTIC_LAYER=true`).
+- **🗄️ output_format='data' default**: Tools return raw rows with `bigquery_latency_ms`. The orchestrator either streams a Markdown summary directly, or — if `synthesize_response=True` — runs an extra LLM call to compose a natural-language answer.
+- **💰 Token Budget pool separation (Phase 3-A)**: `chat` and `report` pools tracked independently so a heavy report generation cannot starve chat (and vice-versa).
+- **📊 Adaptive UI**: Automatically switches between narrative, interactive charts, data tables, and `StrategyReportCard` based on tool output.
+- **⚔️ Strategy path retains Reflection Loop**: Self-correction via the Reflection node (max 2 retries) for empty results / SQL errors. The chat path drops the explicit Reflection node and relies on the LLM's natural re-try via the tool_use loop.
 
 ### 5. MLOps: Prompt Versioning, LLM I/O Logging & Evaluation Gate
 **Status**: ✅ Production-ready
 
 **Capabilities**:
 - **📝 Prompt Versioning**: Externalized LLM prompts as versioned text files (`parse_query_v1.txt`, `routing_v1.txt`) managed via `prompt_registry.py`, enabling version-controlled prompt iteration without code changes
+- **💾 Context Caching (Gemini)**: Long fixed prompt prefixes (`parse_query_v1`, `oracle_semantic_v1`) registered via `client.caches.create()` and referenced per-request through `cached_content`. Reduces input token billing from ~$0.30/M to ~$0.03/M tokens (~1/10). Per-instance in-memory registry with 1-hour TTL and fail-open fallback ([`prompt_cache_service.py`](backend/app/services/prompt_cache_service.py))
 - **📊 LLM I/O Logging**: Async logging of all LLM interactions (queries, parsed results, latency, errors) to BigQuery via `llm_logger_service.py` for observability and drift detection
 - **🚦 LLM Evaluation Gate**: CI/CD quality gate that runs LLM against a golden dataset (`golden_dataset.json`) and blocks deployment if accuracy drops below 80%
 
@@ -148,7 +153,7 @@ User rates response 👎 + selects category + writes reason
 - **🌐 Global Rate Limit**: 100 requests/minute across all users via custom ASGI middleware
 - **👤 Per-Session Rate Limit**: 20 requests/minute per user (Firebase user_id > Session ID > IP address)
 - **🎯 Per-Endpoint Rate Limit**: Configurable limits per endpoint via slowapi decorators (e.g., AI chat: 5/min, player stats: 10/min, statistics: 10/min)
-- **💰 LLM Token Budget**: Daily token usage cap (default: 1,000,000 tokens/day) with automatic reset at UTC midnight
+- **💰 LLM Token Budget (pool-separated, Phase 3-A)**: Daily token caps split between `chat` (500K/day) and `report` (500K/day) pools, plus a `shared` hard cap (1M/day). Heavy strategy reports cannot starve chat capacity. Automatic reset at UTC midnight.
 - **📊 Monitoring Integration**: All rate limit rejections are logged to Cloud Monitoring custom metrics and BigQuery `llm_interaction_logs`
 - **⚙️ Configurable via `.env`**: All limits are adjustable without code changes
 
@@ -174,7 +179,7 @@ RATE_LIMIT_ENABLED=true
 
 **Capabilities**:
 - **📊 Data Drift Detection**: Statistical monitoring of ML model input data distribution changes between seasons using KS test, PSI (Population Stability Index), and mean shift analysis
-- **🗄️ Model Registry & Versioning**: Persist trained ML models (KMeans + StandardScaler) to GCS with version tracking. Metadata logged to BigQuery for model lineage
+- **🗄️ Model Registry & Versioning**: Persist trained ML models (KMeans, FT-Transformer + StandardScaler) to GCS with version tracking. Metadata logged to BigQuery for model lineage
 - **🔄 Auto-Baseline**: Drift detection automatically references the active model's training season — no manual baseline specification needed
 - **🚦 CI/CD Drift Gate**: Pre-deployment check blocks releases when critical data drift is detected, prompting model retraining
 
@@ -197,7 +202,7 @@ CI/CD Drift Check → Compare active model's training data vs latest season
 
 **Model Registry Features**:
 - **GCS Storage**: Versioned model artifacts (`models/{model_type}/{version}/model.joblib`)
-- **BigQuery Metadata**: Version tracking with `algorithm` column (supports KMeans, LightGBM, etc.) and `model_params` JSON for algorithm-specific parameters
+- **BigQuery Metadata**: Version tracking with `algorithm` column (supports KMeans, FT-Transformer, LightGBM, etc.) and `model_params` JSON for algorithm-specific parameters
 - **Version Promotion**: Active version management with `promote_version()`
 - **Fallback**: `player_segmentation.py` loads from registry if available, falls back to on-the-fly fitting
 
@@ -210,7 +215,415 @@ CI/CD Drift Check → Compare active model's training data vs latest season
 - `POST /api/v1/model-registry/promote` - Promote a version to active
 - `GET /api/v1/model-registry/active` - Get current active version
 
-**Technologies**: scikit-learn, scipy, joblib, Google Cloud Storage, BigQuery
+**Technologies**: scikit-learn, PyTorch, scipy, joblib, Google Cloud Storage, BigQuery
+
+### 9. Stuff+ / Pitching+ / Pitching++ Pitch Quality Evaluation (Full Stack)
+**Status**: ✅ Production-ready with frontend UI
+
+**Capabilities**:
+- **⚾ Stuff+ Model**: Evaluates pure pitch quality (velocity, spin rate, movement, release point, arm angle) independent of location, using XGBoost regression on `delta_pitcher_run_exp`
+- **🎯 Pitching+ Model**: Evaluates total pitching effectiveness by adding pitch location (`plate_x`, `plate_z`) to the Stuff+ feature set
+- **🚀 Pitching++ Model**: Advanced pitching evaluation combining Pitching+ with sequence context (tunneling, speed difference), precise command (`zone_distance`), and count (`balls`, `strikes`)
+- **📊 Pre-computed Rankings**: Pitcher × pitch type rankings stored in BigQuery for fast retrieval with pagination and sorting
+- **🔮 Real-time Inference**: On-demand per-pitcher prediction using active model from Model Registry
+- **⚖️ Stuff+ vs Pitching+ Gap Analysis**: Compares both scores to classify pitchers as "stuff-dominant", "command-dominant", or "balanced"
+
+**Model Architecture**:
+- **Algorithm**: XGBoost Regressor (500 estimators, max_depth=6, early stopping)
+- **Target Variable**: `delta_pitcher_run_exp` (pitch-level run expectancy change)
+- **Stuff+ Features** (11): `release_speed`, `release_spin_rate`, `spin_axis`, `pfx_x`, `pfx_z`, `release_extension`, `release_pos_x`, `release_pos_z`, `api_break_z_with_gravity`, `api_break_x_arm`, `arm_angle`
+- **Pitching+ Features** (13): Stuff+ features + `plate_x`, `plate_z`
+- **Pitching++ Features**: Pitching+ features + command (`zone_distance`) + count (`balls`, `strikes`) + tunneling (`release_diff`, `speed_diff`, `prev_pfx_z`)
+- **Scoring**: z-score normalization (100 = league average, 15 points = 1σ)
+- **Aggregation**: Pitcher × pitch type level with minimum pitch count filter (default: 100)
+
+**Training Pipeline** (`scripts/train_stuff_plus.py`):
+1. Fetch pitch-level data from BigQuery `statcast_master`
+2. Train XGBoost for Stuff+, Pitching+, and Pitching++ models
+3. Compute pitcher × pitch type rankings with z-score normalization
+4. Save model artifacts to GCS via Model Registry
+5. Write pre-computed rankings to BigQuery `stuff_plus_rankings` table
+
+**API Endpoints**:
+- `GET /api/v1/stuff-plus/rankings` - Get Stuff+, Pitching+, or Pitching++ leaderboard (paginated, sortable)
+- `GET /api/v1/stuff-plus/pitcher/{pitcher_id}` - Real-time per-pitcher pitch-level scores
+- `GET /api/v1/stuff-plus/pitcher/{pitcher_id}/compare` - Stuff+ vs Pitching+ gap analysis
+
+**Technologies**: XGBoost, scikit-learn, pandas, BigQuery, GCS, Model Registry
+
+**Analysis Notebooks**:
+- `analysis/stuff_plus.ipynb` - Stuff+ / Pitching+ / Pitching++ model development and validation
+
+### 10. LLM as a Judge (Automated Quality Evaluation)
+**Status**: ✅ Service layer + unit tests complete
+
+**Overview**: A quality assurance framework where a separate LLM (Gemini Flash) automatically scores the output quality of each processing step across multiple dimensions. Designed to log production request I/O to BigQuery and run batch sample evaluations.
+
+**5 Judge Services**:
+
+| # | Judge | Evaluation Target | Evaluation Dimensions | File |
+|---|---|---|---|---|
+| 1 | **Parse Accuracy** | LLM query parse results | query_type accuracy, metrics extraction, player name resolution, intent understanding | `llm_judge_service.py` |
+| 2 | **Synthesizer Quality** | AI-generated responses | Factual accuracy, analytical depth, language quality, structure, completeness | `synthesizer_judge_service.py` |
+| 3 | **Reflection Decision** | Self-correction loop | Trigger appropriateness, root cause identification, correction quality, over-correction risk | `reflection_judge_service.py` |
+| 4 | **Routing Accuracy** | Supervisor routing | Route accuracy, ambiguity handling, reasoning quality | `routing_judge_service.py` |
+| 5 | **Drift Alert Quality** | Data drift detection results | Statistical validity, practical significance, actionability, domain relevance | `drift_alert_judge_service.py` |
+
+**Operational Architecture**:
+```
+[Real-time] User query → Log step I/O to BigQuery (0 additional Gemini calls)
+[Batch]     Sample from BQ → 5 Judges score → Results saved to BQ
+```
+
+**E2E Script**:
+- `backend/scripts/evaluate_with_llm_judge.py` — Parse accuracy regression testing against golden dataset
+
+**Tests**:
+- `test_llm_judge.py`, `test_synthesizer_judge.py`, `test_reflection_judge.py`, `test_routing_judge.py`, `test_drift_alert_judge.py`
+
+### 11. BQ Embedding-based Quality Warning System
+**Status**: ✅ Production-ready
+
+**Overview**: A serverless, pay-as-you-go quality warning system that detects when a user's query is similar to past queries that received negative feedback. Uses BigQuery ML `ML.GENERATE_EMBEDDING` + `VECTOR_SEARCH` with no always-on instances.
+
+**Architecture**:
+```
+[Daily Batch: 02:00 UTC]
+  llm_interaction_logs (user_rating='bad')
+    → JOIN original query via request_id
+    → ML.GENERATE_EMBEDDING (Vertex AI text-multilingual-embedding-002)
+    → INSERT INTO llm_query_embeddings (append-only)
+
+[At Request Time - Parallel with AI response]
+  User query → BQ ML.GENERATE_EMBEDDING (1 Vertex AI API call)
+             → VECTOR_SEARCH against llm_query_embeddings
+             → quality_warning flag returned with response
+             → Frontend: amber warning banner displayed
+```
+
+**Key Design Decisions**:
+- **Serverless**: Vertex AI API called only on BQ query execution — zero always-on instances
+- **Parallel execution**: `asyncio.gather` runs warning check alongside AI response generation, adding zero perceived latency
+- **Append-only**: Both `llm_interaction_logs` and `llm_query_embeddings` are append-only tables (no UPDATE)
+- **Feedback-driven**: Improves automatically as users submit negative ratings — no manual labeling required
+
+**Components**:
+- `services/bq_embedding_service.py` — VECTOR_SEARCH wrapper with graceful fallback
+- `llm_query_embeddings` BQ table — stores embeddings of bad-rated queries
+- BQ Scheduled Query (daily) — batch embedding generation
+- Frontend warning banner — amber alert with `AlertTriangle` icon
+
+**New BQ Resources**:
+- `mlb_analytics_dash_25.query_embedding_model` — Remote model (Vertex AI `text-multilingual-embedding-002`)
+- `mlb_analytics_dash_25.llm_query_embeddings` — Embedding storage table
+- BQ Connection: `asia-northeast1.vertex_ai_connection`
+
+### 12. Embedding-Based Semantic Data Drift Detection
+**Status**: ✅ Production-ready
+
+**Overview**: Complements existing statistical drift detection (KS test / PSI) by detecting *semantic* shifts in pitching characteristics using BigQuery ML embeddings. Weekly snapshots of league-wide pitch arsenal metrics — aggregated per pitch type (4-Seam Fastball, Slider, Changeup, Curveball, etc.) — are embedded and compared against a 4-week rolling baseline using cosine distance.
+
+**Architecture**:
+```
+[Weekly Batch: Monday 03:00 UTC]
+  statcast_master
+    → Aggregate per pitch_name: avg_velo, avg_spin, pfx_x, pfx_z,
+      api_break_z_with_gravity, release_extension, usage_pct, avg_delta_run_exp
+    → Concatenate all pitch types into single metrics_text string
+    → ML.GENERATE_EMBEDDING → INSERT INTO pitcher_metrics_snapshots
+
+[At Drift Detection Time]
+  Current week snapshot embedding
+    → ML.DISTANCE (COSINE) vs 4-week baseline centroid
+    → semantic_drift_score appended to existing DriftReport
+```
+
+**Why per pitch type**: Each pitch type has completely different velocity ranges, spin rates, and movement profiles. Aggregating across all pitch types would mask meaningful changes — e.g., a league-wide velocity drop on fastballs or a shift in slider sweep angle.
+
+**Drift Thresholds**:
+| Score | Status |
+|-------|--------|
+| < 0.10 | `stable` |
+| 0.10 – 0.20 | `warning` |
+| ≥ 0.20 | `critical` |
+
+**Components**:
+- `services/bq_drift_embedding_service.py` — Cosine distance computation via BQ ML
+- `services/data_drift_service.py` — `semantic_drift` field added to `DriftReport`
+- `queries/create_pitcher_metrics_snapshots.sql` — Table DDL
+- `queries/scheduled_pitcher_embedding_weekly.sql` — Weekly embedding generation
+
+**New BQ Resources**:
+- `mlb_analytics_dash_25.pitcher_metrics_snapshots` — Weekly pitch arsenal snapshots with embeddings
+- BQ Scheduled Query: `pitcher_metrics_weekly_embedding` (Monday 03:00 UTC)
+
+### 13. Advanced Stats Dashboard (Full Stack)
+**Status**: ✅ Production-ready with frontend UI
+
+Custom Statcast-based composite scoring system for pitchers and batters. All scores use an **OPS+-style scale (100 = league average, ±15 = ±1σ)**, computed as `100 + composite_z × 15` where each component is individually z-scored by season (`PARTITION BY game_year`) then re-standardized after weighted combination.
+
+**Pitching Metrics (P-Series)**:
+| ID | Name | Key Components |
+|----|------|---------------|
+| P1 | Pitch Tunnel Score | deception_rate — FB→offspeed sequence swings+called strikes |
+| P2 | Pressure Dominance Index | high-LI run_exp (50%) + pressure_delta vs low-LI (50%), SP-only |
+| P3 | Stamina Score | speed slope (40%) + spin slope (30%) + TTO delta (30%) |
+| P4 | Two-Strike Finisher Score | whiff_rate (50%) + put-away wOBA quality (50%) |
+| P6 | Arsenal Effectiveness | Shannon entropy of pitch usage (50%) + Σ delta_pitcher_run_exp (50%) |
+| P8 | Platoon Neutrality Score | wOBA diff neutrality (60%) + avg wOBA level (40%) |
+
+**Batting Metrics (B-Series)**:
+| ID | Name | Key Components |
+|----|------|---------------|
+| B2 | Plate Discipline Score | O-Swing% inverted (35%) + Z-Swing% (35%) + delta_run_exp decision value (30%) |
+| B3 | Clutch Hitting Index | wOBA_high_LI − wOBA_overall, scale: 100+z×30 |
+| B4 | Contact Consistency Score | neg_CV_xwOBA (35%) + avg_xwOBA (35%) + hard-hit% (20%) + sweet-spot% (10%) |
+| B1 | Swing Efficiency Index | launch_speed/(bat_speed×swing_length) (50%) + neg swing_length (30%) + hard-hit% (20%), 2024+ only |
+| B6 | Spray Mastery Score | spray entropy (40%) + overall xwOBA (35%) + oppo-field xwOBA (25%) |
+
+**Technologies**: BigQuery (views + PARTITION BY season z-scoring), FastAPI, React, Recharts
+
+---
+
+### 14. Live Game Updates — 試合速報 (Full Stack)
+**Status**: ✅ Production-ready with frontend UI
+
+Real-time and same-day game data powered by the official **MLB Stats API** (`statsapi.mlb.com`). No database dependency — all data is fetched live per request.
+
+**Data Coverage**:
+- **Live games**: Current pitcher/batter, count (B-S-O), score, inning, runners on base, full pitch sequence for the current at-bat (pitch type, call, speed)
+- **Final games**: Score summary with win/loss records for both teams
+- **Boxscore**: Full pitcher line (IP, H, R, ER, HR, K, BB, pitches, strikes + season ERA) and batter line (AB, H, R, RBI, HR, SB, 2B, 3B, BB, K + season AVG/OBP/SLG/OPS)
+- **Schedule**: Game list by date with UTC→JST conversion
+
+**Architecture**:
+```
+MLB Stats API (statsapi.mlb.com)
+  ├── schedule endpoint      → game status, score summary, win/loss record
+  ├── feed/live endpoint     → live pitch-by-pitch data
+  └── boxscore endpoint      → final boxscore stats
+
+LiveGameService (FastAPI + httpx async)
+  └── asyncio.gather for parallel multi-game fetching
+```
+
+**Technologies**: FastAPI, httpx (async HTTP), React, ZoneInfo (UTC→JST)
+
+---
+
+### 15. Hot / Slump Dashboard (Full Stack)
+**Status**: ✅ Production-ready with frontend UI
+
+Identifies players on hot streaks or in slumps based on rolling-window performance metrics, powered by BigQuery mart tables.
+
+**Capabilities**:
+- **🔥 Hot Streak Detection**: Flags batters with exceptional recent BA, OPS, Barrel%, and Hard Hit% over 7/14/28-day windows
+- **📉 Slump Detection**: Flags batters with below-threshold performance across the same metrics
+- **📊 Ranked Leaderboards**: Separate hot/slump leaderboards per metric and time window
+- **🏷️ Multi-badge Display**: Each player row shows all active hot/slump badges simultaneously (BA, OPS, Barrel, HH)
+
+**Technologies**: FastAPI, BigQuery (mart tables), React, Recharts
+
+---
+
+### 16. Leaderboard — リーダーボード (Full Stack)
+**Status**: ✅ Production-ready with frontend UI
+
+Traditional season statistics leaderboard for batters and pitchers, sourced from BigQuery mart tables.
+
+**Capabilities**:
+- **⚾ Batting Leaderboard**: AVG, OBP, SLG, OPS, HR, RBI, SB, BB% and more
+- **🎯 Pitching Leaderboard**: ERA, WHIP, K/9, BB/9, FIP and more
+- **🔁 Season Selector**: Historical data from 2021 onward
+- **🌐 League Filter**: MLB-wide, AL-only, or NL-only views
+- **📏 Dynamic Minimum Samples**: Minimum PA/IP thresholds auto-adjusted for current season
+
+**Technologies**: FastAPI, BigQuery (mart tables), React
+
+---
+
+### 17. Standings — 順位表 (Full Stack)
+**Status**: ✅ Production-ready with frontend UI
+
+Real-time MLB division standings powered by the official MLB Stats API.
+
+**Capabilities**:
+- **🏆 Division Standings**: AL East/Central/West and NL East/Central/West
+- **📊 Full Record Display**: W, L, PCT, GB, home/away records
+- **🎨 Win Rate Color Coding**: Green (≥.600), white (.500+), red (below .500)
+- **🔄 Live Data**: Fetched directly from MLB Stats API per request — no database dependency
+
+**Technologies**: FastAPI, httpx (async HTTP), React
+
+---
+
+### 18. Live Monitor Board — モニターボード (Full Stack)
+**Status**: ✅ Production-ready with frontend UI
+
+Real-time game monitoring dashboard with rule-based anomaly detection, extending Live Game Updates with automated in-game alerts.
+
+**Capabilities**:
+- **🚨 Anomaly Detection**: Rule-based alerts for noteworthy in-game events:
+  - Pitcher pitch count ≥ 100 (fatigue warning)
+  - High-leverage situations (close score, late innings with runners)
+  - Exceptional scoring events
+- **🔄 Auto-Polling**: Refreshes every 40 seconds automatically
+- **📋 Multi-game Overview**: Simultaneous monitoring of all live games with alert badges
+
+**Technologies**: FastAPI, MLB Stats API, React
+
+---
+
+### 19. Player Profile — 選手プロフィール (Full Stack)
+**Status**: ✅ Production-ready with frontend UI
+
+Comprehensive per-player profile dashboard with multi-dimensional statistical visualization.
+
+**Capabilities**:
+- **🔍 Player Search**: Debounced autocomplete (300ms delay, min 2 chars) with AbortController for stale-request cancellation
+- **📊 Multi-chart Dashboard**: Radar chart, composed bar/line chart, area chart, and scatter chart
+- **📈 Season Trends**: Year-over-year performance visualization
+- **⚖️ Advanced Metrics Integration**: Displays Advanced Stats scores (B-series / P-series) alongside traditional stats
+
+**Technologies**: FastAPI, BigQuery, React, Recharts (RadarChart, ComposedChart, AreaChart, ScatterChart)
+
+---
+
+### 20. Pitcher Fatigue Analysis (Full Stack)
+**Status**: ✅ Production-ready with frontend UI
+
+Tracks within-game velocity degradation across pitch count buckets or innings to identify pitcher fatigue patterns.
+
+**Capabilities**:
+- **📉 Velocity Degradation Tracking**: Release speed change as pitch count / inning increases
+- **📊 League Average Comparison**: Overlays individual pitcher trend vs. league baseline
+- **🗓️ Season Selector**: Historical analysis across multiple seasons
+
+**Technologies**: FastAPI, BigQuery (`statcast_master`), React, Recharts
+
+---
+
+### 21. Pitcher Whiff Predictor (Full Stack)
+**Status**: ✅ Production-ready with frontend UI
+
+Predicts a pitcher's whiff rate under user-specified situational conditions using multi-filter Statcast analysis.
+
+**Capabilities**:
+- **🎯 Multi-condition Filtering**: Filter simultaneously by batter handedness, inning, count state, runner situation, batter tier, pitch count group, and times through order
+- **📊 Per-pitch-type Breakdown**: Predicted whiff rates per pitch type with color-coded bar chart
+- **🔍 Pitcher Search**: Autocomplete-based pitcher selection with available-pitchers endpoint
+
+**Technologies**: FastAPI, BigQuery (`statcast_master`), React, Recharts
+
+### 22. dbt Semantic Layer Integration (NEW 2026)
+**Status**: ✅ Production-ready (canary via `USE_SEMANTIC_LAYER` flag)
+
+Replaces the legacy two-stage LLM parse + dynamic SQL pipeline with the dbt Semantic Layer (MetricFlow), running as an internal Cloud Run service.
+
+**Why this exists**:
+- The legacy chat path required **two LLM calls** per query: Oracle picked a tool with a natural-language `query: str`, then the tool internally re-parsed that string with a second LLM call to extract metric / player / season parameters and build SQL via `query_maps.py`.
+- That string handoff lost intent, doubled cost / latency, and forced metric definitions to live as Python code inside `query_maps.py`.
+- 2026 dbt benchmarks show Semantic Layer driven text-to-metric reaches ≥ 90% accuracy versus raw text-to-SQL — the industry has moved on.
+
+**Capabilities**:
+- **🎯 Single-pass function calling**: Oracle (Gemini 2.5 Flash) emits a structured `query_semantic_metrics_tool` call with `metrics`, `mlbid`, `season`, `team` directly — no second-stage parse.
+- **📐 Single source of truth for metrics**: Every metric (AVG, OBP, SLG, OPS, wOBA, wRC+, HR, RBI, SO, BB, …) is defined in `mlb-analytics-data-dbt/models/metrics/batting_metrics.yml`. Adding a new metric is a YAML change, not a Python release.
+- **🛡️ Tool-side validation**: Metrics not present in MetricFlow's `/metrics` are rejected before reaching BigQuery so the LLM cannot hallucinate column names.
+- **🔁 Canary rollout flag**: `USE_SEMANTIC_LAYER=true|false` toggles the new path on a per-service basis. Instant rollback with one env-var change.
+- **🌐 Service isolation**: MetricFlow runs as a separate Cloud Run service (`mlb-metricflow-server`) authenticated via Cloud Run service-to-service OIDC ID tokens (`roles/run.invoker`).
+- **🔖 Standard baseball labels**: Internal metric names like `weighted_on_base_avg` are mapped to display names like `wOBA` in table responses.
+
+**Architecture**:
+```
+User question
+    ↓
+Oracle (Gemini, function calling)         ← single LLM call
+    ↓ structured args (metrics=["batting_average","on_base_pct",...], mlbid=660271, season=2025)
+query_semantic_metrics_tool
+    ↓ HTTP POST /query (OIDC ID token)
+mlb-metricflow-server (Cloud Run)
+    ↓ mf query → SQL
+BigQuery (mlb_analytics_dash_25)
+    ↓ rows
+Synthesizer → user (sentence) or DataTable (table)
+```
+
+**Operational notes**:
+- The dbt project under `metricflow/dbt_project/` is a **git submodule** of the private `mlb-analytics-data-dbt` repository. See [Operations: dbt Submodule Update Workflow](#operations-dbt-submodule-update-workflow).
+- Cloud Build authenticates to the private dbt repo via a GitHub PAT stored in Secret Manager (`github-pat`) and pulls the submodule before building the MetricFlow image.
+- Metric metadata is fetched once at backend startup (`@app.on_event("startup")` in `main.py` → `warmup_metric_metadata()`) and cached, so per-request latency is unaffected.
+
+**Technologies**: dbt-bigquery, dbt-metricflow (`mf` CLI), FastAPI (MetricFlow HTTP wrapper), BigQuery, Cloud Run service-to-service auth, Secret Manager.
+
+---
+
+### 23. Search Autocomplete System (Full Stack, Vol.1)
+**Status**: ✅ Production-ready (canary via `VITE_USE_AUTOCOMPLETE_API` flag)
+
+Replaces four scattered `LIKE '%q%'` BigQuery search endpoints with a single in-memory Trie + popularity-ranked autocomplete service. Loaded once at Cloud Run startup and held in process memory.
+
+**Why this exists**:
+- The legacy frontend hit four separate endpoints (`/players/search`, `/advanced-stats/{pitching|batting}/search`, `/stuff-plus/search`), each running a `LIKE '%q%'` query against BigQuery on every keystroke.
+- Substring matching produced noise (typing `oh` returned `Yamamoto`, `Bishop`, `Varsho`), and popularity ranking was absent so retired players ranked alongside active stars.
+- BigQuery costs and p95 latency were both keystroke-bound; with cache disabled (frontend `lru_cache(128)` did not benefit prefix reuse) every typed character round-tripped.
+
+**Capabilities**:
+- **🌳 In-memory Trie**: ~7,000 players (filtered to `mlb_debut_year >= 2000 OR mlb_last_year >= 2000`) inserted under both `full_name` and `last_name` keys for partial-name lookup.
+- **🏷️ Tag-based context filtering**: Each player carries `statcast_pitcher_seasons` / `statcast_batter_seasons` / `stuffplus_seasons` as `frozenset[int]`. A single Trie serves four contexts (`all` / `statcast_pitcher` / `statcast_batter` / `stuffplus`) by post-filtering on tags.
+- **📊 Popularity scoring**: Pre-computed `log(1 + PA + IP*3) + (active ? 1.0 : 0.0)` from recent 3 seasons (2024-2025 from `fact_*` layer, 2026+ from `mart_*` layer via UNION ALL). Scores are baked into entries at build time.
+- **⚡ LRU Prefix Cache**: 4,096-entry `OrderedDict` keyed by `(context, season, prefix)` with O(1) lookup.
+- **🔄 Background warmup with fallback**: FastAPI `lifespan` runs `build()` in `asyncio.to_thread` so cold-start traffic is never blocked. Until ready (or on build failure), the endpoint falls back to legacy `/players/search`.
+- **🚦 Frontend feature flag**: `VITE_USE_AUTOCOMPLETE_API=true` switches all four search call sites (`useBackendAPI.searchPlayers`, `AdvancedStats trends`, `StrategyReportPage PlayerSearchPicker`, Stuff+ pitcher search) to the unified endpoint.
+- **🆔 ID alias mapping**: New API returns `mlbid`; legacy callers expecting `pitcher_id` / `batter_id` get transparent aliasing in the hook layer to preserve existing component contracts.
+
+**Architecture**:
+```
+Cloud Run cold start
+    ↓
+lifespan → asyncio.to_thread(AutocompleteService.build)
+    ↓ single BigQuery query (LEFT JOIN dim_players_master + dim_teams
+    ↓                       + ARRAY_AGG over statcast_master / stuff_plus_rankings
+    ↓                       + UNION ALL fact_*/mart_* for PA/IP)
+Trie populated (~7,000 entries, ~3-5s, ~5-10 MB)
+    ↓
+app.state.autocomplete_ready = True
+
+Per request:
+GET /api/v1/players/autocomplete?q=oht&context=statcast_pitcher&season=2026
+    ↓
+PrefixCache.get((context, season, "oht"))  → hit returns "cache"
+    ↓ miss
+Trie.search_prefix("oht")  → DFS subtree, dedup by mlbid
+    ↓
+ContextFilter.apply(entries, context, season)  → tag-based filter
+    ↓
+sort by popularity_score DESC, slice [:limit]
+    ↓ "trie" served_from
+PrefixCache.put(...)
+```
+
+**Observability**:
+- **Build log** (`autocomplete_build_completed`): `entries_loaded`, `elapsed_query_ms`, `elapsed_total_ms`.
+- **Request log** (`autocomplete_request`): `prefix`, `context`, `season`, `served_from` (`cache` / `trie` / `fallback`), `latency_ms`, `result_count`.
+- All logs auto-tagged with Snowflake `trace_id` via `StructuredLogger`.
+
+**Technologies**: FastAPI (lifespan), BigQuery (`dim_players_master`, `statcast_master`, `stuff_plus_rankings`, `fact_batting_stats_with_risp`, `fact_pitching_stats_master`, `mart_batter_season_stats`, `mart_pitcher_season_stats`), Python (Trie, OrderedDict-LRU, dataclass), React (Vite env-flag), Cloud Logging.
+
+**Related design doc**: [docs/plan_docs/SEARCH_AUTOCOMPLETE_PLAN_VOL1.md](docs/plan_docs/SEARCH_AUTOCOMPLETE_PLAN_VOL1.md).
+
+---
+
+### 24. LLM Usage Cost Dashboard (Full Stack, NEW 2026-05)
+
+Tracks every LLM invocation across the application and exposes cost / token / latency analytics via a dedicated dashboard.
+
+**Gateway pattern**: All LLM calls route through `llm_gateway_service.py` — REST callers via `call_gemini()`, LangChain via `LangchainUsageCallback(BaseCallbackHandler)` attached to `ChatGoogleGenerativeAI`. Every call records model, tokens, cost, latency, and feature tag to `llm_interaction_logs`. Per-model `PRICING` table calculates USD cost from `usage_metadata`.
+
+**Dashboard**: `GET /api/v1/usage/dashboard` returns 6 aggregations (current/prev month summary, by-model, by-feature, 30-day trend with zero-fill, recent N) in a **single BQ query** (CTE + `ARRAY<STRUCT>`) with 60s in-memory TTL cache. Frontend `UsageDashboard.jsx` renders KPI cards, monthly budget tracker, efficiency metrics, by-feature panel, models donut, daily trend SVG, and recent invocations table — styled with diamond-lens design tokens.
+
+**Technologies**: FastAPI, BigQuery, `google-genai`, `langchain-google-genai` + `langgraph`, React.
+
+---
 
 ### Technical Features
 - **AI-Powered Processing**: Uses Gemini 2.5 Flash for query parsing and response generation
@@ -224,8 +637,19 @@ CI/CD Drift Check → Compare active model's training data vs latest season
 
 ## 🏗 Architecture
 
-### Core Data Processing Pipeline
-The application follows a sophisticated 4-step pipeline:
+### Two Coexisting Chat Pipelines (2026)
+
+The application supports two chat backends, switchable per service via the `USE_SEMANTIC_LAYER` environment variable:
+
+#### A. Semantic Layer Path (current, recommended)
+
+1. **🎯 Oracle (Single LLM Call)** — Gemini 2.5 Flash with function calling emits a structured `query_semantic_metrics_tool` invocation: `metrics=[...], mlbid, season, team, output_format`.
+2. **🛡️ Validation** — `query_semantic_metrics_tool` checks each metric against the MetricFlow `/metrics` cache (warmed up at app startup) and rejects unknown metrics before any network call.
+3. **🌐 MetricFlow Cloud Run** — `semantic_layer_client.py` POSTs `/query` with an OIDC ID token to `mlb-metricflow-server`. The server runs `mf query` (dbt-metricflow CLI) which compiles the request into BigQuery SQL using semantic models from the `mlb-analytics-data-dbt` git submodule.
+4. **📊 BigQuery** — MetricFlow issues SQL against `mlb_analytics_dash_25`.
+5. **💬 Synthesizer** — Renders as a `DataTable` (table mode) or asks Gemini to generate a Japanese sentence (text mode). Standard baseball labels (`AVG`, `OBP`, `wOBA`, `wRC+`, ...) are applied via a display-name map.
+
+#### B. Legacy Path (still available, will be retired in Phase 5)
 
 1. **🧠 LLM Query Parsing** (`ai_service._parse_query_with_llm`)
    - Converts natural language (Japanese) to structured JSON parameters
@@ -247,15 +671,77 @@ The application follows a sophisticated 4-step pipeline:
    - Converts structured data back to natural Japanese responses
    - Supports both narrative (`sentence`) and tabular (`table`) output formats
 
-5. **🤖 Autonomous Multi-Agent Reasoning** (`app/services/agents/`)
-   - **Supervisor Architecture**: Decouples query routing from data retrieval via a `SupervisorAgent`.
-   - **Specialized Agents**: 
-     - `StatsAgent`: Handles general statistical queries and trend analysis.
-     - `MatchupAgent`: Handles specific head-to-head player historical comparisons.
-   - **LangGraph Implementation**: Each agent maintains its own "Oracle" (Planning), "Executor" (Data Retrieval), and "Synthesizer" (Final Reporting) loop.
-   - **Feedback Loop**: Agents can self-correct and perform multiple tool calls if the initial measurement is insufficient.
-   - **Reflection Loop**: Each agent includes a `reflection` node that detects executor errors (SQL syntax, empty results) and feeds diagnostic context back to the LLM for self-correction, with a max retry cap to prevent infinite loops.
-   - **Integrated UI**: Pipes structured chart/table metadata directly into the specialized frontend components.
+5. **🤖 Autonomous Reasoning — `ChatOrchestrator` + `StrategyAgent`** (refactored 2026-05-17)
+   - **`ChatOrchestrator`** (`app/services/chat_orchestrator.py`): single-class engine. Raw `google-genai` SDK + `tool_use` loop. Replaces the former `SupervisorAgent` + 4 LangGraph sub-agents (Batter / Pitcher / Matchup / Stats). The outer LLM does NLU itself and calls common tools with structured args.
+   - **`StrategyAgent`** (`app/services/agents/strategy_agent.py`): the only remaining LangGraph agent. 5-node pipeline (Planner → ParallelExecutor → Aggregator → Reflection → Strategist) for cross-domain strategy reports.
+   - **Common Tools** (`app/services/tools/`): shared by both paths. Tools return raw rows (`output_format='data'`) so the orchestrator/agent owns response composition.
+   - **Reflection**: chat path drops the explicit Reflection node and trusts the LLM's natural re-try via the tool_use loop. Strategy path keeps an explicit Reflection node (max 2 retries).
+   - **Token Budget pool separation (Phase 3-A)**: chat / report pools tracked independently in `token_budget_service.py`.
+   - **Integrated UI**: Pipes structured chart / table / matchup metadata directly into the specialized frontend components.
+
+### ML Model Architecture: 3-Layer Separation of Concerns
+
+The project follows modern MLOps best practices by separating machine learning workflows into three distinct layers:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ [1] Training Layer (Local or Vertex AI Pipelines)              │
+│  ├── Notebook/Script: FT-Transformer & K-means training        │
+│  ├── Model evaluation & comparison                             │
+│  └── Model registration to Vertex AI Model Registry (GCS)      │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│ [2] Inference Layer (Vertex AI Endpoint) - OPTIONAL            │
+│  ├── Managed model hosting & auto-scaling                      │
+│  ├── Online prediction API                                     │
+│  └── Requires custom container for PyTorch models (not used)   │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│ [3] Application Layer (FastAPI on Cloud Run) - LIGHTWEIGHT     │
+│  ├── Data retrieval from BigQuery                              │
+│  ├── Local K-means inference (default)                         │
+│  ├── OR HTTP calls to Vertex AI Endpoint (optional)            │
+│  └── No PyTorch/heavy ML dependencies in production            │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### Why This Architecture?
+
+**2024-2025 Approach (Monolithic):**
+- ❌ Training + Inference in FastAPI backend
+- ❌ PyTorch in Cloud Run container (3.9GB image size)
+- ❌ High memory usage and slow cold starts
+- ❌ Tight coupling between training and serving
+
+**2026 Approach (Separation of Concerns):**
+- ✅ Training isolated in notebooks/scripts (`scripts/train_and_register_ft_transformer.py`)
+- ✅ Models versioned in Vertex AI Model Registry (GCS storage, ~$0.002/month)
+- ✅ Lightweight FastAPI backend (no PyTorch in production)
+- ✅ Optional Vertex AI Endpoint for high-scale inference
+- ✅ Easy rollback and A/B testing with model versions
+
+#### Current Implementation
+
+**Training:**
+- Location: `scripts/train_and_register_ft_transformer.py`, `analysis/kmeans_vs_ft_transformer.ipynb`
+- Run locally with PyTorch installed
+- Registers models to Vertex AI Model Registry
+
+**Inference:**
+- Default: Local K-means clustering (lightweight, fast)
+- Optional: Vertex AI Endpoint (via HTTP, switchable with env var `USE_VERTEX_AI_ENDPOINT`)
+- Automatic fallback to local K-means if Vertex AI fails
+
+**Cost Comparison:**
+| Component | Current (Default) | Optional (Vertex AI) |
+|-----------|------------------|----------------------|
+| Model Storage | GCS: $0.002/month | GCS: $0.002/month |
+| Compute | Cloud Run (included) | Endpoint: $73/month (24/7) |
+| **Total** | **~$0** | **~$73/month** |
+
+→ **Recommended**: Use default local K-means unless high-scale inference is required.
 
 ### Key Configuration System
 - **`query_maps.py`**: Central configuration for all query types and metric mappings
@@ -281,6 +767,7 @@ The application follows a sophisticated 4-step pipeline:
 - **Google Cloud BigQuery** - Data warehouse for MLB statistics
 - **Google Cloud Storage** - Additional data storage
 - **Gemini 2.5 Flash API** - AI-powered query processing
+- **XGBoost** - Gradient boosting for Stuff+/Pitching+ pitch quality models
 
 ### Infrastructure
 - **Docker** - Containerized deployment
@@ -609,6 +1096,49 @@ Analyze OPS impact on win rate with fixed ERA and home runs allowed.
 - **Loading States**: Visual feedback during API calls
 - **Error Handling**: Graceful error display and recovery
 
+## 🔧 Operations: dbt Submodule Update Workflow
+
+The dbt project under `metricflow/dbt_project/` is a **git submodule** of the private `mlb-analytics-data-dbt` repository. Whenever a YAML there changes (a new metric, a new semantic_model, a measure rename), the diamond-lens-side submodule pointer must be bumped so Cloud Build picks up the new commit.
+
+### Standard flow (manual)
+
+```bash
+# 1. Edit and push in the dbt repo
+cd ~/path/to/mlb-analytics-data-dbt
+# ... edit YAML files ...
+git add .
+git commit -m "feat: add new metric foo_bar"
+git push
+
+# 2. Bump the submodule pointer in diamond-lens
+cd ~/path/to/diamond-lens
+git submodule update --remote metricflow/dbt_project
+git add metricflow/dbt_project
+git commit -m "chore: bump dbt_project submodule"
+git push
+# → Cloud Build rebuilds & redeploys mlb-metricflow-server with the new YAML
+```
+
+### Why the second commit is required
+
+Git submodules pin to a **specific commit SHA**, not to a branch tip. Pushing in the dbt repo alone does not change what the diamond-lens commit points at. The `git submodule update --remote` command fast-forwards the local submodule, then the diamond-lens commit records the new SHA so Cloud Build clones the right state.
+
+### Verifying after deploy
+
+```
+resource.type="cloud_run_revision"
+resource.labels.service_name="mlb-metricflow-server"
+"dbt parse succeeded"
+```
+
+If the Semantic Layer call returns `Semantic Layer 経由のメトリクス取得に失敗しました`, the most common cause is a forgotten submodule bump — the new metric exists in the dbt repo but the deployed MetricFlow image still has the old commit.
+
+### Cloud Build authentication for the private dbt repo
+
+Cloud Build uses a fine-grained GitHub PAT stored in Secret Manager as `github-pat`. The `init-submodules` step in `cloudbuild.yaml` writes a one-shot git config that injects the PAT into HTTPS clone URLs. Token rotation: regenerate the PAT in GitHub, add a new version to the `github-pat` secret, then redeploy.
+
+---
+
 ## 🏗️ Infrastructure Management
 
 ### Terraform Configuration
@@ -782,6 +1312,7 @@ The project includes comprehensive unit tests for critical business logic:
 - `test_security.py` (13 tests): SQL injection prevention and input validation
 - `test_reflection_loop.py` (11 tests): Reflection loop self-correction logic, error classification, and executor empty result detection
 - `test_data_drift.py` (17 tests): Data drift detection logic (PSI, KS test, severity determination)
+- `test_ft_transformer.py` (5 tests): FT-Transformer encoder architecture and self-supervised training
 - `test_model_registry.py` (5+ tests): Model registry service (train, register, load, promote with mocked GCS/BigQuery)
 
 **Run tests locally:**
@@ -943,7 +1474,9 @@ diamond-lens/
 │   │   │   ├── llm_logger_service.py # LLM I/O logging to BigQuery (with user_id)
 │   │   │   ├── data_drift_service.py  # Data drift detection (PSI, KS test)
 │   │   │   ├── ml_monitoring_logger.py # ML monitoring logs to BigQuery
+│   │   │   ├── ft_transformer.py          # FT-Transformer encoder for player segmentation
 │   │   │   ├── model_registry_service.py # Model Registry & Versioning (GCS + BQ)
+│   │   │   ├── stuff_plus_service.py    # Stuff+/Pitching+ inference & rankings
 │   │   │   ├── monitoring_service.py # Custom metrics
 │   │   │   └── token_budget_service.py # Daily LLM token budget (in-memory)
 │   │   ├── prompts/         # Versioned LLM prompt templates
@@ -966,6 +1499,8 @@ diamond-lens/
 │   │   ├── check_data_drift.py        # CI/CD ML drift check gate
 │   │   └── create_drift_monitoring_table.py # BigQuery table setup
 │   ├── requirements.txt     # Python dependencies
+├── scripts/                  # ML training scripts
+│   └── train_stuff_plus.py  # Stuff+/Pitching+ training pipeline
 │   └── Dockerfile           # Backend container
 ├── terraform/                # Infrastructure as Code
 │   ├── modules/             # Reusable Terraform modules
