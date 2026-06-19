@@ -1,24 +1,10 @@
-# Hi there, I'm Takeshi 👋
-
-### Ex-Google PgM / AI & Data Platform Operations / Full-Stack AI Engineer
-
-**Bridging the gap between Business and Engineering with Deep Technical Depth.**
-
-Fusing 11 years of Large-Scale Data Operations leadership at Google with "Generative AI × Serverless" implementation skills honed during a 2025 technical deep dive.
-I lead the end-to-end lifecycle—from "Translating Business Requirements" to "Scalable AI & Data Platform Design"—to drive DX and practical AI integration.
-
----
-
-**ビジネスとエンジニアリングの「ギャップ」を埋め、AI/データ基盤の深い実装力に基づき実行をリードする TPgM。**
-
-Googleでの11年間にわたる大規模データオペレーション統括（Data Ops）の経験と、2025年に、技術を深掘りするための期間（Technical Deep Dive）として集中的に磨き上げた「Generative AI × Serverless」の実装スキルを融合。
-「ビジネス要件の翻訳」から「スケーラブルなプラットフォーム設計」までを一気通貫でリードし、実用的なAI導入を推進します。
+# Ex-Google PgM (11 yrs, Large-Scale Data Ops) — now building Generative AI × Serverless platforms on Google Cloud
 
 ---
 
 ## 🚀 Featured Projects: Technical Deep Dive
 
-A collection of serverless, AI-native applications developed during a 2025 technical deep dive, centering on **"User Sovereignty (Data Ownership)"** and **"Serverless FinOps"** architectures.
+A collection of serverless, AI-native applications developed, centering on **"User Sovereignty (Data Ownership)"** and **"Serverless FinOps"** architectures.
 
 ### 1. ⚾ [Diamond Lens] - MLB Analytics AI Platform
 
