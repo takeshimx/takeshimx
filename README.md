@@ -1,4 +1,4 @@
-# Ex-Google PgM (11 yrs, Large-Scale Data Ops) — now building Generative AI × Serverless platforms on Google Cloud
+**Ex-Google PgM (11 yrs, Large-Scale Data Ops) — now building Generative AI × Serverless platforms on Google Cloud.**
 
 ---
 
